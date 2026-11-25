@@ -22,7 +22,7 @@ vps-probe/
 
 ### 1. 面板一键部署（推荐）
 
-自动检查/安装 Docker 与 Git，拉取代码并构建启动容器（默认目录 `/opt/vps-probe`，端口 `8008`）：
+自动检查/安装 Docker 与 Git，拉取代码并构建启动容器（默认目录 `/opt/vps-probe`，端口 `5921`）：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh
@@ -32,7 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel
 
 ```bash
 # 自定义端口与安装目录
-curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh -s -- --port 8008 --dir /opt/vps-probe
+curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh -s -- --port 5921 --dir /opt/vps-probe
 
 # 卸载容器（保留 data 数据目录）
 curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh -s -- --uninstall
@@ -45,7 +45,7 @@ git clone https://github.com/zijin-c/vps-probe.git && cd vps-probe
 docker compose up -d --build
 ```
 
-部署完成后打开 `http://你的IP:8008/dashboard`，默认账号 **`admin / admin`**，请登录后立刻在「账户」里修改用户名与密码。
+部署完成后打开 `http://你的IP:5921/dashboard`，默认账号 **`admin / admin`**，请登录后立刻在「账户」里修改用户名与密码。
 建议前面套 Nginx / Caddy 反代开启 HTTPS（gRPC 与网页共用端口，反代需开启 HTTP/2 / gRPC 转发）。
 
 ### 2. 安装只读 Agent（每台 VPS）
@@ -58,8 +58,8 @@ curl -fsSL https://probe.example.com/probe/agent/install.sh | sudo sh -s -- \
   --panel https://probe.example.com --server probe.example.com:443 --tls --secret 你的agent_secret_key
 
 # 面板没有 HTTPS
-curl -fsSL http://1.2.3.4:8008/probe/agent/install.sh | sudo sh -s -- \
-  --panel http://1.2.3.4:8008 --server 1.2.3.4:8008 --secret 你的agent_secret_key
+curl -fsSL http://1.2.3.4:5921/probe/agent/install.sh | sudo sh -s -- \
+  --panel http://1.2.3.4:5921 --server 1.2.3.4:5921 --secret 你的agent_secret_key
 ```
 
 Agent 安装在 `/opt/nezha-ro/`，systemd 服务名 `nezha-ro-agent`，常驻内存约 10~15 MB。卸载只需将命令参数改为 `--uninstall`。

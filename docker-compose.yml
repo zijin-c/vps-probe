@@ -6,7 +6,7 @@ services:
     # 必须是 always：网页"上传恢复"后面板会自行退出，靠它重新拉起并应用备份
     restart: always
     ports:
-      - "8008:8008"   # Web 面板 + Agent gRPC 共用端口，建议前面套 Nginx/Caddy 上 HTTPS
+      - "5921:8008"   # Web 面板 + Agent gRPC 共用端口，建议前面套 Nginx/Caddy 上 HTTPS
     volumes:
       - ./data:/dashboard/data
     environment:

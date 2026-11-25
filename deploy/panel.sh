@@ -4,7 +4,7 @@
 #   安装 / 更新：
 #     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh
 #   自定义端口与目录：
-#     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh -s -- --port 8008 --dir /opt/vps-probe
+#     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh -s -- --port 5921 --dir /opt/vps-probe
 #   卸载（保留 data 数据目录）：
 #     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh -s -- --uninstall
 set -eu
@@ -12,7 +12,7 @@ set -eu
 REPO="${REPO:-https://github.com/zijin-c/vps-probe.git}"
 BRANCH="${BRANCH:-main}"
 DIR="/opt/vps-probe"
-PORT="8008"
+PORT="5921"
 UNINSTALL=0
 
 while [ $# -gt 0 ]; do
@@ -86,9 +86,9 @@ else
   cd "$DIR"
 fi
 
-# 自定义端口（仅在非默认 8008 时覆写映射）
-if [ "$PORT" != "8008" ]; then
-  sed -i "s/\"8008:8008\"/\"${PORT}:8008\"/" docker-compose.yml
+# 自定义端口（仅在非默认 5921 时覆写映射）
+if [ "$PORT" != "5921" ]; then
+  sed -i -E "s/\"[0-9]+:8008\"/\"${PORT}:8008\"/" docker-compose.yml
 fi
 
 echo ">>> 开始构建并启动面板（首次构建需编译 Go 与前端，约 1~3 分钟）..."
