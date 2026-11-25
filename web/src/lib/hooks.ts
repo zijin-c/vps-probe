@@ -223,6 +223,17 @@ export function useSetting() {
   return setting
 }
 
+let cachedMeta: { footer_text: string } | null = null
+export function useProbeMeta() {
+  const [m, setM] = useState<{ footer_text: string }>(() => cachedMeta || { footer_text: '只读探针，Agent 不执行任何远程指令' })
+  useEffect(() => {
+    api<{ footer_text: string }>('/probe/meta')
+      .then((d) => { if (d) { cachedMeta = d; setM(d) } })
+      .catch(() => {})
+  }, [])
+  return m
+}
+
 export function useNow(interval = 1000) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {

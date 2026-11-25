@@ -424,6 +424,41 @@ const CYCLES = [
   { v: '2年', l: '两年付' }, { v: '3年', l: '三年付' }, { v: '一次性', l: '一次性' },
 ]
 
+const CURRENCIES = ['$', '¥', '€', '£', 'HK$', 'NT$']
+const BW_UNITS = ['Mbps', 'Gbps']
+const BW_PRESETS = ['500Mbps', '1Gbps', '2.5Gbps', '10Gbps']
+const TR_UNITS = ['GB', 'TB', '不限']
+const TR_PRESETS = ['500GB', '1TB', '2TB', '4TB', '不限']
+
+function splitCurrency(raw?: string): { cur: string; num: string } {
+  const s = (raw || '').trim()
+  if (!s) return { cur: '$', num: '' }
+  for (const c of [...CURRENCIES].sort((a, b) => b.length - a.length)) {
+    if (s.startsWith(c)) return { cur: c, num: s.slice(c.length).trim() }
+  }
+  const m = s.match(/^([^\d.-]*)(.*)$/)
+  return { cur: m?.[1]?.trim() || '$', num: (m?.[2] || s).trim() }
+}
+
+function splitUnit(raw: string | undefined, units: string[], fallbackUnit: string): { num: string; unit: string } {
+  const s = (raw || '').trim()
+  if (!s) return { num: '', unit: fallbackUnit }
+  if (s === '不限' || /unlimited/i.test(s)) return { num: '', unit: '不限' }
+  const m = s.match(/^([\d.]+)\s*(.*)$/)
+  if (!m) return { num: s, unit: fallbackUnit }
+  const uRaw = m[2].trim().toLowerCase()
+  const matched = units.find((u) => u.toLowerCase() === uRaw || (u === 'TB' && uRaw === 't') || (u === 'GB' && uRaw === 'g') || (u === 'Gbps' && uRaw === 'g') || (u === 'Mbps' && uRaw === 'm'))
+  return { num: m[1], unit: matched || fallbackUnit }
+}
+
+function addMonthsToDate(baseDate: string, months: number): string {
+  const d = baseDate ? new Date(`${baseDate}T00:00:00`) : new Date()
+  if (isNaN(d.getTime())) return ''
+  d.setMonth(d.getMonth() + months)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
 function EditServer({ s, onClose, onSaved }: { s: ServerRow; onClose: () => void; onSaved: () => void }) {
   const note = useMemo(() => parseNote(s.public_note), [s.public_note])
   const rawIsJson = !s.public_note || s.public_note.trim().startsWith('{')
@@ -438,6 +473,36 @@ function EditServer({ s, onClose, onSaved }: { s: ServerRow; onClose: () => void
   const [raw, setRaw] = useState(s.public_note || '')
   const [jsonErr, setJsonErr] = useState('')
   const { busy, run } = useAction()
+
+  const initPrice = splitCurrency(bill.amount)
+  const [priceCur, setPriceCur] = useState(initPrice.cur)
+  const [priceNum, setPriceNum] = useState(initPrice.num)
+
+  const initBw = splitUnit(plan.bandwidth, BW_UNITS, 'Gbps')
+  const [bwNum, setBwNum] = useState(initBw.num)
+  const [bwUnit, setBwUnit] = useState(initBw.unit)
+
+  const initTr = splitUnit(plan.trafficVol, TR_UNITS, 'TB')
+  const [trNum, setTrNum] = useState(initTr.num)
+  const [trUnit, setTrUnit] = useState(initTr.unit)
+
+  const syncPrice = (cur: string, num: string) => {
+    setPriceCur(cur)
+    setPriceNum(num)
+    setBill((prev) => ({ ...prev, amount: num.trim() ? `${cur}${num.trim()}` : '' }))
+  }
+
+  const syncBw = (num: string, unit: string) => {
+    setBwNum(num)
+    setBwUnit(unit)
+    setPlan((prev) => ({ ...prev, bandwidth: num.trim() ? `${num.trim()}${unit}` : '' }))
+  }
+
+  const syncTr = (num: string, unit: string) => {
+    setTrNum(num)
+    setTrUnit(unit)
+    setPlan((prev) => ({ ...prev, trafficVol: unit === '不限' ? '不限' : num.trim() ? `${num.trim()}${unit}` : '' }))
+  }
 
   const composeNote = () => {
     if (advanced) return raw
@@ -497,22 +562,66 @@ function EditServer({ s, onClose, onSaved }: { s: ServerRow; onClose: () => void
           </Field>
         ) : (
           <>
-            <Field label="价格" hint="带币种符号，如 $10、¥88、€5"><input className="input" placeholder="$10" value={bill.amount || ''} onChange={(e) => setBill({ ...bill, amount: e.target.value })} /></Field>
+            <div className="fld">
+              <span>价格</span>
+              <div className="input-group">
+                <select className="select unit-sel" value={priceCur} onChange={(e) => syncPrice(e.target.value, priceNum)} aria-label="币种">
+                  {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input className="input" type="number" step="any" min={0} placeholder="10" value={priceNum} onChange={(e) => syncPrice(priceCur, e.target.value)} />
+              </div>
+            </div>
             <Field label="付款周期">
               <select className="select" value={bill.cycle} onChange={(e) => setBill({ ...bill, cycle: e.target.value })}>
                 {CYCLES.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
               </select>
             </Field>
             <Field label="开始日期"><input className="input" type="date" value={toDateInput(bill.startDate)} onChange={(e) => setBill({ ...bill, startDate: fromDateInput(e.target.value) })} /></Field>
-            <Field label="到期日期">
+            <div className="fld">
+              <span>到期日期</span>
               <input className="input" type="date" disabled={permanent} value={permanent ? '' : toDateInput(bill.endDate)} onChange={(e) => setBill({ ...bill, endDate: fromDateInput(e.target.value) })} />
-            </Field>
+              {!permanent && (
+                <div className="preset-row">
+                  {[{ l: '+1月', m: 1 }, { l: '+1季', m: 3 }, { l: '+半年', m: 6 }, { l: '+1年', m: 12 }].map((x) => (
+                    <button key={x.l} type="button" className="preset-chip" onClick={() => setBill({ ...bill, endDate: fromDateInput(addMonthsToDate(toDateInput(bill.startDate), x.m)) })}>{x.l}</button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="full" style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
               <label className="check"><input type="checkbox" checked={bill.autoRenewal === '1'} onChange={(e) => setBill({ ...bill, autoRenewal: e.target.checked ? '1' : '0' })} />自动续费（过期后按周期顺延）</label>
               <label className="check"><input type="checkbox" checked={permanent} onChange={(e) => setPermanent(e.target.checked)} />永久（不到期）</label>
             </div>
-            <Field label="带宽"><input className="input" placeholder="1Gbps" value={plan.bandwidth || ''} onChange={(e) => setPlan({ ...plan, bandwidth: e.target.value })} /></Field>
-            <Field label="月流量" hint="仅展示；配额进度请在「告警规则」加周期流量规则"><input className="input" placeholder="256GB" value={plan.trafficVol || ''} onChange={(e) => setPlan({ ...plan, trafficVol: e.target.value })} /></Field>
+            <div className="fld">
+              <span>带宽</span>
+              <div className="input-group">
+                <input className="input" type="number" step="any" min={0} placeholder="1" value={bwNum} onChange={(e) => syncBw(e.target.value, bwUnit)} />
+                <select className="select unit-sel" value={bwUnit} onChange={(e) => syncBw(bwNum, e.target.value)} aria-label="带宽单位">
+                  {BW_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+              <div className="preset-row">
+                {BW_PRESETS.map((p) => {
+                  const sp = splitUnit(p, BW_UNITS, 'Gbps')
+                  return <button key={p} type="button" className={clsx('preset-chip', plan.bandwidth === p && 'on')} onClick={() => syncBw(sp.num, sp.unit)}>{p}</button>
+                })}
+              </div>
+            </div>
+            <div className="fld">
+              <span>月流量</span>
+              <div className="input-group">
+                <input className="input" type="number" step="any" min={0} disabled={trUnit === '不限'} placeholder={trUnit === '不限' ? '不限流量' : '1'} value={trUnit === '不限' ? '' : trNum} onChange={(e) => syncTr(e.target.value, trUnit)} />
+                <select className="select unit-sel" value={trUnit} onChange={(e) => syncTr(trNum, e.target.value)} aria-label="流量单位">
+                  {TR_UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+              <div className="preset-row">
+                {TR_PRESETS.map((p) => {
+                  const sp = splitUnit(p, TR_UNITS, 'TB')
+                  return <button key={p} type="button" className={clsx('preset-chip', plan.trafficVol === p && 'on')} onClick={() => syncTr(sp.num, sp.unit)}>{p}</button>
+                })}
+              </div>
+            </div>
             <Field label="流量计费">
               <select className="select" value={plan.trafficType || '2'} onChange={(e) => setPlan({ ...plan, trafficType: e.target.value })}>
                 <option value="2">双向计费</option>
@@ -526,8 +635,6 @@ function EditServer({ s, onClose, onSaved }: { s: ServerRow; onClose: () => void
                 <label className="check"><input type="checkbox" checked={plan.IPv6 === '1'} onChange={(e) => setPlan({ ...plan, IPv6: e.target.checked ? '1' : '0' })} />IPv6</label>
               </div>
             </div>
-            <Field label="线路标签" hint="逗号分隔，显示为金色标签" full><input className="input" placeholder="CN2 GIA, 9929, CMIN2" value={plan.networkRoute || ''} onChange={(e) => setPlan({ ...plan, networkRoute: e.target.value })} /></Field>
-            <Field label="其它标签" hint="逗号分隔，如 原生IP、解锁奈飞" full><input className="input" placeholder="原生IP" value={plan.extra || ''} onChange={(e) => setPlan({ ...plan, extra: e.target.value })} /></Field>
           </>
         )}
         <div className="full muted" style={{ fontSize: 12.5 }}>

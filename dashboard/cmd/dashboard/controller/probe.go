@@ -32,6 +32,7 @@ func registerProbeRoutes(r *gin.Engine, authMw, optionalAuthMw gin.HandlerFunc) 
 	r.GET("/api/v1/probe/agent/quality", probeAgentSchedule)
 	r.POST("/api/v1/probe/agent/quality", probeAgentUpload)
 	// 前台读取（访客可看，IP 遮罩；对访客隐藏的服务器不返回）
+	r.GET("/api/v1/probe/meta", probeGetMeta)
 	r.GET("/api/v1/probe/quality", optionalAuthMw, probeQualitySummary)
 	r.GET("/api/v1/probe/quality/:id", optionalAuthMw, probeGetQuality)
 	// 后台：请求某台服务器重新检测
@@ -304,6 +305,14 @@ func probeRestoreLocalBackup(c *gin.Context) {
 	log.Printf("PROBE>> 已选定本地备份 %s，面板即将重启以应用", name)
 	c.JSON(http.StatusOK, model.CommonResponse[string]{Success: true, Data: "备份校验通过，面板正在重启并恢复数据，约 10 秒后刷新页面"})
 	go probe.RequestRestart()
+}
+
+func probeGetMeta(c *gin.Context) {
+	v := probe.GetConfigView()
+	c.JSON(http.StatusOK, model.CommonResponse[map[string]string]{
+		Success: true,
+		Data:    map[string]string{"footer_text": v.Site.FooterText},
+	})
 }
 
 func probeGetConfig(c *gin.Context) {

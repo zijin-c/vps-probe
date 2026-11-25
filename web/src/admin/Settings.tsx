@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Field } from '../components/ui'
-import { api } from '../lib/api'
+import { api, type ProbeConfigView } from '../lib/api'
 import { PageHead, useAction, useAdmin } from './common'
 
 export default function Settings() {
   const { setting, reloadSetting } = useAdmin()
   const [f, setF] = useState<Record<string, unknown> | null>(null)
+  const [footerText, setFooterText] = useState('只读探针，Agent 不执行任何远程指令')
   const { busy, run } = useAction()
 
   useEffect(() => { if (setting) setF({ ...setting.config }) }, [setting])
+  useEffect(() => {
+    api<ProbeConfigView>('/probe/config')
+      .then((v) => { if (v?.site) setFooterText(v.site.footer_text ?? '') })
+      .catch(() => {})
+  }, [])
   if (!f) return <div className="empty">加载中…</div>
 
   const str = (k: string) => (f[k] as string) || ''
@@ -22,7 +28,11 @@ export default function Settings() {
       user_template: userTemplates.includes(str('user_template')) ? str('user_template') : (userTemplates[0] || 'user-dist'),
       online_stats_days: Number(f.online_stats_days) || undefined,
     }
-    if (await run(() => api('/setting', { method: 'PATCH', body }), '设置已保存')) reloadSetting()
+    const ok = await run(async () => {
+      await api('/setting', { method: 'PATCH', body })
+      await api('/probe/config', { method: 'PATCH', body: { site: { footer_text: footerText } } })
+    }, '设置已保存')
+    if (ok) reloadSetting()
   }
 
   return (
@@ -39,6 +49,9 @@ export default function Settings() {
               <select className="select" value={str('language') || 'zh-CN'} onChange={(e) => set('language', e.target.value)}>
                 <option value="zh-CN">简体中文</option><option value="zh-TW">繁體中文</option><option value="en-US">English</option>
               </select>
+            </Field>
+            <Field label="页脚副文案" hint="显示在前台底部「站点名 · 副文案」，留空则只显示站点名" full>
+              <input className="input" placeholder="只读探针，Agent 不执行任何远程指令" value={footerText} onChange={(e) => setFooterText(e.target.value)} />
             </Field>
           </div>
         </section>

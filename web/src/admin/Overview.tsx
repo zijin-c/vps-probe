@@ -113,7 +113,7 @@ export default function Overview() {
       </PageHead>
 
       <div className="ov-grid">
-        <Link to="/dashboard/servers" className="glass sum clickable">
+        <Link to="/dashboard/servers" className="glass sum clickable c-ok">
           <div className="label">在线服务器</div>
           <div className="big tnum">
             {servers === null ? '—' : stats.online.length}
@@ -126,7 +126,7 @@ export default function Overview() {
           </div>
         </Link>
 
-        <Link to="/dashboard/servers" className="glass sum clickable">
+        <Link to="/dashboard/servers" className="glass sum clickable c-warn">
           <div className="label">30 天内到期</div>
           <div className="big tnum" style={{ color: stats.expiring.length ? 'var(--warn)' : undefined }}>
             {servers === null ? '—' : stats.expiring.length}
@@ -139,7 +139,7 @@ export default function Overview() {
           </div>
         </Link>
 
-        <Link to="/dashboard/alerts" className="glass sum clickable">
+        <Link to="/dashboard/alerts" className="glass sum clickable c-violet">
           <div className="label">流量配额预警</div>
           <div className="big tnum" style={{ color: stats.highTraffic.length ? 'var(--bad)' : undefined }}>
             {svc === null ? '—' : stats.highTraffic.length}
@@ -152,7 +152,7 @@ export default function Overview() {
           </div>
         </Link>
 
-        <Link to="/dashboard/probe" className="glass sum clickable">
+        <Link to="/dashboard/probe" className="glass sum clickable c-info">
           <div className="label">Telegram 机器人</div>
           <div className="big" style={{ fontSize: 20, marginTop: 10 }}>
             {probeCfg === null ? '—' : probeCfg.telegram.running ? <span className="ok">运行中</span> : <span className="muted">未启用</span>}

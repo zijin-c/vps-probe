@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ServerCard, { RouteTags, expiryText } from '../components/ServerCard'
 import Topbar from '../components/Topbar'
-import { IGrid, IList, ISearch } from '../components/icons'
+import { ICalendar, IGrid, IList, IPulse, ISearch, IServer, ITraffic } from '../components/icons'
 import { Meter, Seg, Dropdown } from '../components/ui'
 import { api, type QualityBrief, type ServerGroup } from '../lib/api'
 import { priceText } from '../lib/billing'
 import { bytesParts, clsx, fmtBytes, fmtSpeed, pct, toneVar } from '../lib/format'
-import { cycleTrafficMap, useLiveServers, useQualitySummary, useServiceData, useSetting, useTitle, type LiveServer } from '../lib/hooks'
+import { cycleTrafficMap, useLiveServers, useProbeMeta, useQualitySummary, useServiceData, useSetting, useTitle, type LiveServer } from '../lib/hooks'
 
 type SortKey = 'default' | 'name' | 'cpu' | 'expire' | 'traffic'
 type Filter = 'all' | 'online' | 'offline' | `g${number}`
@@ -35,6 +35,7 @@ function savePref(k: string, v: string) {
 
 export default function Home() {
   const setting = useSetting()
+  const probeMeta = useProbeMeta()
   const site = setting?.config.site_name || 'VPS 探针'
   useTitle(site)
   const { servers, viewers, connected, loaded } = useLiveServers()
@@ -124,25 +125,25 @@ export default function Home() {
       } />
       <main className="page">
         <section className="summary">
-          <div className={clsx('sum glass clickable', (filter === 'online' || filter === 'offline') && 'active', filter === 'offline' && 'bad-ring')}
+          <div className={clsx('sum glass clickable c-ok', (filter === 'online' || filter === 'offline') && 'active', filter === 'offline' && 'bad-ring')}
             role="button" tabIndex={0} title={offline ? '点击切换：在线 / 离线 / 全部' : '点击只看在线'}
             onClick={() => setFilter(filter === 'all' ? (offline ? 'offline' : 'online') : filter === 'offline' ? 'online' : 'all')}>
-            <div className="label">在线服务器</div>
+            <div className="sum-h"><div className="label">在线服务器</div><span className="sum-ico ok"><IServer /></span></div>
             <div className="big">{online.length}<small>/ {servers.length}</small></div>
             <div className="sub">{offline ? <span className="bad">{offline} 台离线</span> : servers.length ? '全部运行正常' : '暂无服务器'}</div>
           </div>
-          <div className="sum glass">
-            <div className="label">实时带宽</div>
+          <div className="sum glass c-info">
+            <div className="sum-h"><div className="label">实时带宽</div><span className="sum-ico info"><IPulse /></span></div>
             <div className="big">{bytesParts(up)[0]}<small>{bytesParts(up)[1]}/s ↑</small></div>
             <div className="sub">下行 {fmtSpeed(down)}</div>
           </div>
-          <div className="sum glass">
-            <div className="label">累计流量</div>
+          <div className="sum glass c-violet">
+            <div className="sum-h"><div className="label">累计流量</div><span className="sum-ico violet"><ITraffic /></span></div>
             <div className="big">{bytesParts(totalIn + totalOut)[0]}<small>{bytesParts(totalIn + totalOut)[1]}</small></div>
             <div className="sub">出 {fmtBytes(totalOut)} · 入 {fmtBytes(totalIn)}</div>
           </div>
-          <div className="sum glass">
-            <div className="label">7 天内到期</div>
+          <div className="sum glass c-warn">
+            <div className="sum-h"><div className="label">7 天内到期</div><span className="sum-ico warn"><ICalendar /></span></div>
             <div className={clsx('big', expiring.length > 0 && 'warn')}>{expiring.length}<small>台</small></div>
             <div className="sub">{expiring.length ? expiring.map((s) => s.name).join('、') : '近期无需续费'}</div>
           </div>
@@ -181,7 +182,7 @@ export default function Home() {
           </div>
         ) : <ListView servers={shown} traffic={traffic} briefs={briefs} />}
 
-        <footer className="foot"><span>{site}</span><span>·</span><span>只读探针，Agent 不执行任何远程指令</span></footer>
+        <footer className="foot"><span>{site}</span>{probeMeta.footer_text && <><span>·</span><span>{probeMeta.footer_text}</span></>}</footer>
       </main>
     </>
   )

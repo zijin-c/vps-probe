@@ -7,8 +7,8 @@ import { IBack } from '../components/icons'
 import { AnimNum, Ring, Seg, Sparkline, useToast } from '../components/ui'
 import { api, getMetric, type IPInfo, type MetricSeries, type QualityPart, type QualityReport, type RouteItem, type UnlockItem } from '../lib/api'
 import { priceText, splitTags } from '../lib/billing'
-import { bytesParts, clsx, fmtAgo, fmtBytes, fmtDate, fmtUptime, latencyTone, pct, toneVar } from '../lib/format'
-import { cycleTrafficMap, useLiveServers, useNow, useQuality, useServiceData, useSetting, useSignedIn, useTitle, type LatencyLine } from '../lib/hooks'
+import { bytesParts, clsx, fmtAgo, fmtBytes, fmtDate, fmtUptime, latencyTone, maskIP, pct, toneVar } from '../lib/format'
+import { cycleTrafficMap, useLiveServers, useNow, useProbeMeta, useQuality, useServiceData, useSetting, useSignedIn, useTitle, type LatencyLine } from '../lib/hooks'
 
 type Period = '1d' | '7d' | '30d'
 type Tab = 'latency' | 'cpu' | 'mem' | 'disk' | 'net' | 'load' | 'conn'
@@ -16,6 +16,7 @@ type Tab = 'latency' | 'cpu' | 'mem' | 'disk' | 'net' | 'load' | 'conn'
 export default function ServerDetail() {
   const id = Number(useParams().id)
   const setting = useSetting()
+  const probeMeta = useProbeMeta()
   const site = setting?.config.site_name || 'VPS 探针'
   const signedIn = useSignedIn()
   const { servers, loaded } = useLiveServers()
@@ -133,7 +134,7 @@ export default function ServerDetail() {
           </div>
         </section>
 
-        <footer className="foot"><span>{site}</span><span>·</span><span>只读探针，Agent 不执行任何远程指令</span></footer>
+        <footer className="foot"><span>{site}</span>{probeMeta.footer_text && <><span>·</span><span>{probeMeta.footer_text}</span></>}</footer>
       </main>
     </>
   )
@@ -287,6 +288,7 @@ function IPPanel({ ip }: { ip: IPInfo }) {
   return (
     <div className="two">
       <dl className="glass dl">
+        <dt>地址</dt><dd className="mono">{ip.ip.includes('*') ? ip.ip : maskIP(ip.ip)}</dd>
         <dt>类型</dt>
         <dd className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           {ip.ip_type === 'native' ? <span className="tag ok">原生 IP</span> : ip.ip_type === 'broadcast' ? <span className="tag warn">广播 IP</span> : <span className="tag plain">未知</span>}

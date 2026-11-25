@@ -208,6 +208,9 @@ export interface NotificationGroup {
 
 // ---- 探针扩展配置（probe.yaml）与本地备份 ----
 export interface ProbeConfigView {
+  site?: {
+    footer_text: string
+  }
   telegram: {
     has_bot_token: boolean
     chat_ids: number[]

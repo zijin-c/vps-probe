@@ -43,14 +43,24 @@ type QualityConf struct {
 	IP2LocationKey string `yaml:"ip2location_key"`
 }
 
+type SiteConf struct {
+	FooterText string `yaml:"footer_text"`
+}
+
 type Config struct {
+	Site     SiteConf     `yaml:"site"`
 	Telegram TelegramConf `yaml:"telegram"`
 	Backup   BackupConf   `yaml:"backup"`
 	Quality  QualityConf  `yaml:"quality"`
 }
 
+const defaultFooterText = "只读探针，Agent 不执行任何远程指令"
+
 func defaultConfig() Config {
 	return Config{
+		Site: SiteConf{
+			FooterText: defaultFooterText,
+		},
 		Telegram: TelegramConf{
 			APIBase:         "https://api.telegram.org",
 			NotifyOffline:   true,
@@ -160,6 +170,9 @@ func getConf() Config {
 
 // ConfigView 是返回给管理后台的配置视图，敏感密钥不回显明文。
 type ConfigView struct {
+	Site struct {
+		FooterText string `json:"footer_text"`
+	} `json:"site"`
 	Telegram struct {
 		HasBotToken     bool    `json:"has_bot_token"`
 		ChatIDs         []int64 `json:"chat_ids"`
@@ -188,6 +201,9 @@ type ConfigView struct {
 
 // ConfigPatch 是后台提交的配置更新。密钥字段留空表示保持原值，传 "-" 表示清空。
 type ConfigPatch struct {
+	Site *struct {
+		FooterText *string `json:"footer_text"`
+	} `json:"site"`
 	Telegram *struct {
 		BotToken        *string  `json:"bot_token"`
 		ChatIDs         *[]int64 `json:"chat_ids"`
@@ -216,6 +232,7 @@ type ConfigPatch struct {
 func GetConfigView() ConfigView {
 	c := getConf()
 	var v ConfigView
+	v.Site.FooterText = c.Site.FooterText
 	v.Telegram.HasBotToken = c.Telegram.BotToken != ""
 	v.Telegram.ChatIDs = append([]int64{}, c.Telegram.ChatIDs...)
 	if v.Telegram.ChatIDs == nil {
@@ -270,6 +287,9 @@ func applySecretPatch(dst *string, src *string) bool {
 func SaveConfigPatch(p ConfigPatch) (needRestart bool, err error) {
 	confMu.Lock()
 	c := conf
+	if p.Site != nil && p.Site.FooterText != nil {
+		c.Site.FooterText = strings.TrimSpace(*p.Site.FooterText)
+	}
 	if p.Telegram != nil {
 		t := p.Telegram
 		if applySecretPatch(&c.Telegram.BotToken, t.BotToken) {
