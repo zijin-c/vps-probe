@@ -650,7 +650,8 @@ function InstallModal({ onClose }: { onClose: () => void }) {
   const toast = useToast()
   const host = (setting?.config.install_host as string) || ''
   const [server, setServer] = useState(host || `${location.hostname}:${location.port || (location.protocol === 'https:' ? '443' : '80')}`)
-  const [tls, setTls] = useState(setting?.config.tls ?? location.protocol === 'https:')
+  // 注意：Go 后端对 false 字段会 omitempty 省略，所以已配置 install_host 时应以 !!setting.config.tls 为准，不能回退到 location.protocol
+  const [tls, setTls] = useState(host ? !!setting?.config.tls : location.protocol === 'https:')
   const [uuid, setUuid] = useState('')
   const [mode, setMode] = useState<'root' | 'sudo'>('root')
   const panel = location.origin
