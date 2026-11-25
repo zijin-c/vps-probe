@@ -424,7 +424,7 @@ const CYCLES = [
   { v: '2年', l: '两年付' }, { v: '3年', l: '三年付' }, { v: '一次性', l: '一次性' },
 ]
 
-const CURRENCIES = ['$', '¥', '€', '£', 'HK$', 'NT$']
+const CURRENCIES = ['$', '¥', '€', '£', 'CA$', 'HK$', 'NT$']
 const BW_UNITS = ['Mbps', 'Gbps']
 const BW_PRESETS = ['500Mbps', '1Gbps', '2.5Gbps', '10Gbps']
 const TR_UNITS = ['GB', 'TB', '不限']
