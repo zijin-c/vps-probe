@@ -3,7 +3,7 @@ import { IEdit, IPlus, ITrash } from '../components/icons'
 import { Field, Modal } from '../components/ui'
 import { api, type AlertRule, type NotificationGroup, type Rule, type ServerRow } from '../lib/api'
 import { fmtBytes } from '../lib/format'
-import { PageHead, ServerPicker, confirmDelete, fromDateInput, toDateInput, useAction, useList } from './common'
+import { PageHead, ServerPicker, Switch, fromDateInput, toDateInput, useAction, useConfirmDelete, useList } from './common'
 
 type Unit = 'pct' | 'gb' | 'mbs' | 'num' | 'none' | 'c'
 const TYPES: { v: string; l: string; unit: Unit; cycle?: boolean }[] = [
@@ -46,11 +46,27 @@ export default function Alerts() {
   const { data: servers } = useList<ServerRow>('/server')
   const { data: groups } = useList<NotificationGroup>('/notification-group')
   const [edit, setEdit] = useState<AlertRule | 'new' | 'traffic' | null>(null)
-  const { run } = useAction()
+  const { busy, run } = useAction()
+  const confirmDelete = useConfirmDelete()
 
   const del = async (a: AlertRule) => {
-    if (!confirmDelete(a.name)) return
+    if (!(await confirmDelete(a.name))) return
     if (await run(() => api('/batch-delete/alert-rule', { method: 'POST', body: [a.id] }), '已删除')) reload()
+  }
+
+  const toggleEnable = async (a: AlertRule, next: boolean) => {
+    const body = {
+      name: a.name,
+      rules: a.rules,
+      enable: next,
+      trigger_mode: a.trigger_mode || 0,
+      notification_group_id: a.notification_group_id || 0,
+      fail_trigger_tasks: a.fail_trigger_tasks || [],
+      recover_trigger_tasks: a.recover_trigger_tasks || [],
+    }
+    if (await run(() => api(`/alert-rule/${a.id}`, { method: 'PATCH', body }), next ? `已启用「${a.name}」` : `已停用「${a.name}」`)) {
+      reload()
+    }
   }
 
   return (
@@ -60,19 +76,22 @@ export default function Alerts() {
         <button className="btn primary" onClick={() => setEdit('new')}><IPlus />新建规则</button>
       </PageHead>
       <div className="glass table-wrap">
-        <table className="t">
-          <thead><tr><th>名称</th><th>条件</th><th>通知组</th><th>状态</th><th /></tr></thead>
+        <table className="t stack">
+          <thead><tr><th>名称</th><th>条件</th><th>通知组</th><th>启用</th><th /></tr></thead>
           <tbody>
+            {data === null && <tr><td colSpan={5} className="empty">加载中…</td></tr>}
             {data?.length === 0 && <tr><td colSpan={5} className="empty">还没有规则。先点「流量配额」给服务器设置每月流量吧</td></tr>}
             {data?.map((a) => (
               <tr key={a.id}>
-                <td><b>{a.name}</b></td>
-                <td style={{ fontSize: 12.5 }}>{a.rules.map((r, i) => <div key={i}>{ruleText(r)}</div>)}</td>
-                <td>{groups?.find((g) => g.group.id === a.notification_group_id)?.group.name || <span className="muted">—</span>}</td>
-                <td>{a.enable ? <span className="tag ok">启用</span> : <span className="tag plain">停用</span>}</td>
+                <td className="first"><b>{a.name}</b></td>
+                <td data-l="条件" style={{ fontSize: 12.5 }}>{a.rules.map((r, i) => <div key={i}>{ruleText(r)}</div>)}</td>
+                <td data-l="通知组">{groups?.find((g) => g.group.id === a.notification_group_id)?.group.name || <span className="muted">—</span>}</td>
+                <td data-l="启用">
+                  <Switch checked={!!a.enable} disabled={busy} label={`切换 ${a.name} 启用状态`} onChange={(v) => toggleEnable(a, v)} />
+                </td>
                 <td><div className="act">
                   <button className="btn sm" onClick={() => setEdit(a)}><IEdit />编辑</button>
-                  <button className="btn sm danger" onClick={() => del(a)}><ITrash /></button>
+                  <button className="btn sm ghost danger" onClick={() => del(a)} aria-label="删除"><ITrash /></button>
                 </div></td>
               </tr>
             ))}
@@ -90,33 +109,65 @@ function firstOfMonth() {
   return fromDateInput(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`)
 }
 
+function defaultRule(preset?: 'traffic'): Rule {
+  return preset === 'traffic'
+    ? { type: 'transfer_all_cycle', max: 256 * GB, cycle_start: firstOfMonth(), cycle_interval: 1, cycle_unit: 'month', cover: 0 }
+    : { type: 'offline', duration: 60, cover: 0 }
+}
+
 function AlertModal({ a, preset, servers, groups, onClose, onSaved }: {
   a: AlertRule | null; preset?: 'traffic'; servers: ServerRow[]; groups: NotificationGroup[]; onClose: () => void; onSaved: () => void
 }) {
-  const r0: Rule = a?.rules[0] || (preset === 'traffic'
-    ? { type: 'transfer_all_cycle', max: 256 * GB, cycle_start: firstOfMonth(), cycle_interval: 1, cycle_unit: 'month', cover: 0 }
-    : { type: 'offline', duration: 60, cover: 0 })
   const [name, setName] = useState(a?.name || (preset === 'traffic' ? '月流量 256GB' : ''))
-  const [rule, setRule] = useState<Rule>(r0)
+  const [rules, setRules] = useState<Rule[]>(a?.rules?.length ? a.rules.map((r) => ({ ...r })) : [defaultRule(preset)])
   const [enable, setEnable] = useState(a ? !!a.enable : true)
   const [mode, setMode] = useState(a?.trigger_mode || 0)
   const [group, setGroup] = useState(a?.notification_group_id || 0)
   const { busy, run } = useAction()
-  const t = typeOf(rule.type) || TYPES[0]
-  const set = (p: Partial<Rule>) => setRule({ ...rule, ...p })
 
-  const changeType = (v: string) => {
-    const nt = typeOf(v)!
-    if (nt.cycle) set({ type: v, cycle_start: rule.cycle_start || firstOfMonth(), cycle_interval: rule.cycle_interval || 1, cycle_unit: rule.cycle_unit || 'month', max: rule.max && typeOf(rule.type)?.cycle ? rule.max : 256 * GB, min: 0, duration: 0 })
-    else set({ type: v, cycle_start: undefined, cycle_interval: undefined, cycle_unit: undefined, max: nt.unit === 'pct' ? 90 : 0, min: 0, duration: rule.duration || 60 })
+  const updateRule = (idx: number, patch: Partial<Rule>) => {
+    setRules((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
   }
 
+  const changeType = (idx: number, v: string) => {
+    const nt = typeOf(v)!
+    const cur = rules[idx]
+    if (nt.cycle) {
+      updateRule(idx, {
+        type: v,
+        cycle_start: cur.cycle_start || firstOfMonth(),
+        cycle_interval: cur.cycle_interval || 1,
+        cycle_unit: cur.cycle_unit || 'month',
+        max: cur.max && typeOf(cur.type)?.cycle ? cur.max : 256 * GB,
+        min: 0,
+        duration: 0,
+      })
+    } else {
+      updateRule(idx, {
+        type: v,
+        cycle_start: undefined,
+        cycle_interval: undefined,
+        cycle_unit: undefined,
+        max: nt.unit === 'pct' ? 90 : 0,
+        min: 0,
+        duration: cur.duration || 60,
+      })
+    }
+  }
+
+  const addCondition = () => setRules((prev) => [...prev, { type: 'cpu', max: 90, duration: 60, cover: 0 }])
+  const removeCondition = (idx: number) => setRules((prev) => prev.filter((_, i) => i !== idx))
+
   const save = async () => {
-    const r: Rule = { ...rule }
-    if (t.unit === 'none') { delete r.max; delete r.min }
-    if (t.cycle) delete r.duration
+    const cleaned = rules.map((raw) => {
+      const t = typeOf(raw.type) || TYPES[0]
+      const r: Rule = { ...raw }
+      if (t.unit === 'none') { delete r.max; delete r.min }
+      if (t.cycle) delete r.duration
+      return r
+    })
     const body = {
-      name, rules: [r, ...(a?.rules.slice(1) || [])], enable, trigger_mode: mode, notification_group_id: group,
+      name, rules: cleaned, enable, trigger_mode: mode, notification_group_id: group,
       fail_trigger_tasks: [], recover_trigger_tasks: [],
     }
     const ok = await run(() => a ? api(`/alert-rule/${a.id}`, { method: 'PATCH', body }) : api('/alert-rule', { method: 'POST', body }), '已保存')
@@ -124,59 +175,79 @@ function AlertModal({ a, preset, servers, groups, onClose, onSaved }: {
   }
 
   return (
-    <Modal title={a ? '编辑规则' : preset === 'traffic' ? '设置流量配额' : '新建规则'} onClose={onClose} width={680} footer={<>
+    <Modal title={a ? '编辑规则' : preset === 'traffic' ? '设置流量配额' : '新建规则'} onClose={onClose} width={720} footer={<>
       <button className="btn" onClick={onClose}>取消</button>
-      <button className="btn primary" disabled={busy || !name.trim()} onClick={save}>保存</button>
+      <button className="btn primary" disabled={busy || !name.trim() || rules.length === 0} onClick={save}>保存</button>
     </>}>
       <div className="form">
         <Field label="名称"><input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus /></Field>
-        <Field label="类型">
-          <select className="select" value={rule.type} onChange={(e) => changeType(e.target.value)}>
-            {TYPES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}
-          </select>
-        </Field>
-
-        {t.cycle ? <>
-          <Field label="流量上限（GB）"><input className="input" type="number" value={toUi('gb', rule.max)} onChange={(e) => set({ max: fromUi('gb', Number(e.target.value)) })} /></Field>
-          <Field label="周期起点" hint="例如每月 1 号重置就选某月 1 号"><input className="input" type="date" value={toDateInput(rule.cycle_start)} onChange={(e) => set({ cycle_start: fromDateInput(e.target.value) })} /></Field>
-          <Field label="每"><input className="input" type="number" min={1} value={rule.cycle_interval || 1} onChange={(e) => set({ cycle_interval: Number(e.target.value) })} /></Field>
-          <Field label="周期单位">
-            <select className="select" value={rule.cycle_unit || 'month'} onChange={(e) => set({ cycle_unit: e.target.value })}>
-              <option value="day">天</option><option value="week">周</option><option value="month">月</option><option value="year">年</option>
-            </select>
-          </Field>
-        </> : t.unit === 'none' ? (
-          <Field label="离线多少秒后告警" full><input className="input" type="number" min={3} value={rule.duration || 60} onChange={(e) => set({ duration: Number(e.target.value) })} /></Field>
-        ) : <>
-          <Field label={`高于（${unitLabel[t.unit] || '值'}）`} hint="0 表示不检查"><input className="input" type="number" value={toUi(t.unit, rule.max)} onChange={(e) => set({ max: fromUi(t.unit, Number(e.target.value)) })} /></Field>
-          <Field label={`低于（${unitLabel[t.unit] || '值'}）`} hint="0 表示不检查"><input className="input" type="number" value={toUi(t.unit, rule.min)} onChange={(e) => set({ min: fromUi(t.unit, Number(e.target.value)) })} /></Field>
-          <Field label="持续秒数" full hint="指标持续超标这么久才告警（3 ~ 86400）"><input className="input" type="number" min={3} value={rule.duration || 60} onChange={(e) => set({ duration: Number(e.target.value) })} /></Field>
-        </>}
-
-        <Field label="覆盖范围">
-          <select className="select" value={rule.cover} onChange={(e) => set({ cover: Number(e.target.value) })}>
-            <option value={0}>全部服务器（可排除）</option>
-            <option value={1}>仅选中的服务器</option>
-          </select>
-        </Field>
         <Field label="触发方式">
           <select className="select" value={mode} onChange={(e) => setMode(Number(e.target.value))}>
             <option value={0}>每次都通知</option>
             <option value={1}>只通知一次（恢复后再次触发才通知）</option>
           </select>
         </Field>
-        <div className="fld full">
-          <span>{rule.cover === 1 ? '应用到这些服务器' : '排除这些服务器'}</span>
-          <ServerPicker servers={servers} value={rule.ignore || {}} onChange={(v) => set({ ignore: v })} />
-        </div>
         <Field label="通知组" full hint="TG 机器人的流量/到期提醒不依赖这里；这里是面板自带的 Webhook 通知">
           <select className="select" value={group} onChange={(e) => setGroup(Number(e.target.value))}>
             <option value={0}>不通知（仅统计）</option>
             {groups.map((g) => <option key={g.group.id} value={g.group.id}>{g.group.name}</option>)}
           </select>
         </Field>
-        <label className="check full"><input type="checkbox" checked={enable} onChange={(e) => setEnable(e.target.checked)} />启用</label>
-        {a && a.rules.length > 1 && <div className="full muted" style={{ fontSize: 12.5 }}>此规则包含 {a.rules.length} 个条件，这里只编辑第一个，其余保持不变。</div>}
+        <label className="check full"><input type="checkbox" checked={enable} onChange={(e) => setEnable(e.target.checked)} />启用规则</label>
+
+        <div className="form-sec">
+          触发条件（{rules.length} 条，全部满足时触发）
+          <span className="spacer" />
+          <button type="button" className="btn xs" onClick={addCondition}><IPlus />添加条件</button>
+        </div>
+
+        {rules.map((rule, idx) => {
+          const t = typeOf(rule.type) || TYPES[0]
+          return (
+            <div key={idx} className="rule-card">
+              <div className="rule-card-h">
+                <span>条件 #{idx + 1}</span>
+                <span className="spacer" />
+                {rules.length > 1 && (
+                  <button type="button" className="btn xs ghost danger" onClick={() => removeCondition(idx)}><ITrash />移除</button>
+                )}
+              </div>
+              <Field label="类型">
+                <select className="select" value={rule.type} onChange={(e) => changeType(idx, e.target.value)}>
+                  {TYPES.map((x) => <option key={x.v} value={x.v}>{x.l}</option>)}
+                </select>
+              </Field>
+              <Field label="覆盖范围">
+                <select className="select" value={rule.cover} onChange={(e) => updateRule(idx, { cover: Number(e.target.value) })}>
+                  <option value={0}>全部服务器（可排除）</option>
+                  <option value={1}>仅选中的服务器</option>
+                </select>
+              </Field>
+
+              {t.cycle ? <>
+                <Field label="流量上限（GB）"><input className="input" type="number" value={toUi('gb', rule.max)} onChange={(e) => updateRule(idx, { max: fromUi('gb', Number(e.target.value)) })} /></Field>
+                <Field label="周期起点" hint="如每月 1 号重置就选某月 1 号"><input className="input" type="date" value={toDateInput(rule.cycle_start)} onChange={(e) => updateRule(idx, { cycle_start: fromDateInput(e.target.value) })} /></Field>
+                <Field label="每"><input className="input" type="number" min={1} value={rule.cycle_interval || 1} onChange={(e) => updateRule(idx, { cycle_interval: Number(e.target.value) })} /></Field>
+                <Field label="周期单位">
+                  <select className="select" value={rule.cycle_unit || 'month'} onChange={(e) => updateRule(idx, { cycle_unit: e.target.value })}>
+                    <option value="day">天</option><option value="week">周</option><option value="month">月</option><option value="year">年</option>
+                  </select>
+                </Field>
+              </> : t.unit === 'none' ? (
+                <Field label="离线多少秒后告警" full><input className="input" type="number" min={3} value={rule.duration || 60} onChange={(e) => updateRule(idx, { duration: Number(e.target.value) })} /></Field>
+              ) : <>
+                <Field label={`高于（${unitLabel[t.unit] || '值'}）`} hint="0 表示不检查"><input className="input" type="number" value={toUi(t.unit, rule.max)} onChange={(e) => updateRule(idx, { max: fromUi(t.unit, Number(e.target.value)) })} /></Field>
+                <Field label={`低于（${unitLabel[t.unit] || '值'}）`} hint="0 表示不检查"><input className="input" type="number" value={toUi(t.unit, rule.min)} onChange={(e) => updateRule(idx, { min: fromUi(t.unit, Number(e.target.value)) })} /></Field>
+                <Field label="持续秒数" full hint="指标持续超标这么久才告警（3 ~ 86400）"><input className="input" type="number" min={3} value={rule.duration || 60} onChange={(e) => updateRule(idx, { duration: Number(e.target.value) })} /></Field>
+              </>}
+
+              <div className="fld full">
+                <span>{rule.cover === 1 ? '应用到这些服务器' : '排除这些服务器'}</span>
+                <ServerPicker servers={servers} value={rule.ignore || {}} onChange={(v) => updateRule(idx, { ignore: v })} />
+              </div>
+            </div>
+          )
+        })}
       </div>
     </Modal>
   )

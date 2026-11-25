@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { IEdit, IPlus, ITrash } from '../components/icons'
 import { Field, Modal } from '../components/ui'
 import { api, type NotificationGroup, type ServerRow, type Service } from '../lib/api'
-import { PageHead, ServerPicker, confirmDelete, useAction, useList } from './common'
+import { PageHead, ServerPicker, useAction, useConfirmDelete, useList } from './common'
 
 const TYPES: Record<number, string> = { 1: 'HTTP GET', 2: 'ICMP Ping', 3: 'TCPing' }
 
@@ -12,9 +12,10 @@ export default function Monitors() {
   const { data: groups } = useList<NotificationGroup>('/notification-group')
   const [edit, setEdit] = useState<Service | 'new' | null>(null)
   const { run } = useAction()
+  const confirmDelete = useConfirmDelete()
 
   const del = async (s: Service) => {
-    if (!confirmDelete(s.name)) return
+    if (!(await confirmDelete(s.name))) return
     if (await run(() => api('/batch-delete/service', { method: 'POST', body: [s.id] }), '已删除')) reload()
   }
   const coverText = (s: Service) => {
@@ -28,21 +29,22 @@ export default function Monitors() {
         <button className="btn primary" onClick={() => setEdit('new')}><IPlus />添加监控</button>
       </PageHead>
       <div className="glass table-wrap">
-        <table className="t">
+        <table className="t stack">
           <thead><tr><th>名称</th><th>类型</th><th>目标</th><th>间隔</th><th>覆盖</th><th>通知</th><th /></tr></thead>
           <tbody>
+            {data === null && <tr><td colSpan={7} className="empty">加载中…</td></tr>}
             {data?.length === 0 && <tr><td colSpan={7} className="empty">还没有监控。例：名称「电信」，类型 TCPing，目标 某电信节点:80</td></tr>}
             {data?.map((s) => (
               <tr key={s.id}>
-                <td><b>{s.name}</b>{s.hide_for_guest && <span className="tag plain" style={{ marginLeft: 6 }}>对访客隐藏</span>}</td>
-                <td><span className="tag plain">{TYPES[s.type] || s.type}</span></td>
-                <td className="num" style={{ fontSize: 12.5 }}>{s.target}</td>
-                <td className="num">{s.duration}s</td>
-                <td>{coverText(s)}</td>
-                <td>{s.notify || s.latency_notify ? <span className="tag ok">开启</span> : <span className="muted">—</span>}</td>
+                <td className="first"><b>{s.name}</b>{s.hide_for_guest && <span className="tag plain" style={{ marginLeft: 6 }}>隐藏</span>}</td>
+                <td data-l="类型"><span className="tag plain">{TYPES[s.type] || s.type}</span></td>
+                <td data-l="目标" className="mono" style={{ fontSize: 12.5 }}>{s.target}</td>
+                <td data-l="间隔" className="tnum">{s.duration}s</td>
+                <td data-l="覆盖">{coverText(s)}</td>
+                <td data-l="通知">{s.notify || s.latency_notify ? <span className="tag ok">开启</span> : <span className="muted">—</span>}</td>
                 <td><div className="act">
                   <button className="btn sm" onClick={() => setEdit(s)}><IEdit />编辑</button>
-                  <button className="btn sm danger" onClick={() => del(s)}><ITrash /></button>
+                  <button className="btn sm ghost danger" onClick={() => del(s)} aria-label="删除"><ITrash /></button>
                 </div></td>
               </tr>
             ))}

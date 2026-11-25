@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import ServerCard, { RouteTags, expiryText } from '../components/ServerCard'
 import Topbar from '../components/Topbar'
 import { IGrid, IList, ISearch } from '../components/icons'
-import { Meter, Seg } from '../components/ui'
+import { Meter, Seg, Dropdown } from '../components/ui'
 import { api, type QualityBrief, type ServerGroup } from '../lib/api'
 import { priceText } from '../lib/billing'
 import { bytesParts, clsx, fmtBytes, fmtSpeed, pct, toneVar } from '../lib/format'
@@ -12,8 +12,22 @@ import { cycleTrafficMap, useLiveServers, useQualitySummary, useServiceData, use
 type SortKey = 'default' | 'name' | 'cpu' | 'expire' | 'traffic'
 type Filter = 'all' | 'online' | 'offline' | `g${number}`
 
-function pref<T extends string>(k: string, d: T): T {
-  try { return (localStorage.getItem(k) as T) || d } catch { return d }
+const SORT_KEYS: SortKey[] = ['default', 'name', 'cpu', 'expire', 'traffic']
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'default', label: '默认排序' },
+  { value: 'name', label: '按名称' },
+  { value: 'cpu', label: '按 CPU 占用' },
+  { value: 'expire', label: '按到期时间' },
+  { value: 'traffic', label: '按流量用量' },
+]
+
+function pref<T extends string>(k: string, d: T, allowed?: readonly T[]): T {
+  try {
+    const v = localStorage.getItem(k) as T | null
+    if (!v) return d
+    if (allowed && !allowed.includes(v)) return d
+    return v
+  } catch { return d }
 }
 function savePref(k: string, v: string) {
   try { localStorage.setItem(k, v) } catch { /* 隐私模式忽略 */ }
@@ -30,8 +44,8 @@ export default function Home() {
   const [groups, setGroups] = useState<ServerGroup[]>([])
   const [filter, setFilter] = useState<Filter>('all')
   const [q, setQ] = useState('')
-  const [sort, setSort] = useState<SortKey>(() => pref('probe-sort', 'default'))
-  const [view, setView] = useState<'grid' | 'list'>(() => pref('probe-view', 'grid'))
+  const [sort, setSort] = useState<SortKey>(() => pref('probe-sort', 'default', SORT_KEYS))
+  const [view, setView] = useState<'grid' | 'list'>(() => pref('probe-view', 'grid', ['grid', 'list'] as const))
 
   useEffect(() => { api<ServerGroup[]>('/server-group').then((g) => setGroups(g || [])).catch(() => {}) }, [])
 
@@ -81,15 +95,14 @@ export default function Home() {
       return `${s.name} ${s.note.planDataMod?.networkRoute || ''} ${routes}`.toLowerCase().includes(kw)
     })
     const ratio = (s: LiveServer) => { const t = traffic.get(s.id); return t && t.limit ? t.used / t.limit : 0 }
-    const by: Record<SortKey, ((a: LiveServer, b: LiveServer) => number) | null> = {
-      default: null,
+    const by: Record<SortKey, (a: LiveServer, b: LiveServer) => number> = {
+      default: (a, b) => ((b.display_index || 0) - (a.display_index || 0)) || (a.id - b.id),
       name: (a, b) => (a.name || '').localeCompare(b.name || '', 'zh-CN'),
       cpu: (a, b) => (b.state?.cpu || 0) - (a.state?.cpu || 0),
       expire: (a, b) => (a.billing.daysLeft ?? 1e9) - (b.billing.daysLeft ?? 1e9),
       traffic: (a, b) => ratio(b) - ratio(a),
     }
-    const fn = by[sort]
-    if (fn) list = [...list].sort(fn)
+    list = [...list].sort(by[sort] || by.default)
     // 离线的始终沉底
     return [...list.filter((s) => s.online), ...list.filter((s) => !s.online)]
   }, [servers, groups, filter, q, sort, traffic, briefs])
@@ -143,14 +156,12 @@ export default function Home() {
             <input ref={searchRef} className="input" placeholder="搜索名称或线路" value={q} onChange={(e) => setQ(e.target.value)} aria-label="搜索" />
             <span className="kbd">/</span>
           </label>
-          <select className="select pill" value={sort} aria-label="排序"
-            onChange={(e) => { setSort(e.target.value as SortKey); savePref('probe-sort', e.target.value) }}>
-            <option value="default">默认排序</option>
-            <option value="name">名称</option>
-            <option value="cpu">CPU 占用</option>
-            <option value="expire">到期时间</option>
-            <option value="traffic">流量用量</option>
-          </select>
+          <Dropdown<SortKey>
+            value={sort}
+            label="排序"
+            options={SORT_OPTIONS}
+            onChange={(v) => { setSort(v); savePref('probe-sort', v) }}
+          />
           <Seg<'grid' | 'list'> className="views" label="视图" value={view} onChange={(v) => { setView(v); savePref('probe-view', v) }} options={[
             { value: 'grid', label: <IGrid />, title: '卡片' },
             { value: 'list', label: <IList />, title: '列表' },

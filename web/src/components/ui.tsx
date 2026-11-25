@@ -180,6 +180,78 @@ export function Seg<T extends string | number>({ value, options, onChange, label
   )
 }
 
+/** 玻璃风格下拉选择框，避免原生 <select> 在深色模式下弹出层错色与样式割裂 */
+export function Dropdown<T extends string | number>({ value, options, onChange, label, className, align = 'right' }: {
+  value: T
+  options: { value: T; label: ReactNode }[]
+  onChange: (v: T) => void
+  label?: string
+  className?: string
+  align?: 'left' | 'right'
+}) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const cur = options.find((o) => o.value === value) || options[0]
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (root.current && !root.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div ref={root} className={clsx('dd', open && 'open', className)}>
+      <button
+        type="button"
+        className="dd-btn"
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span>{cur?.label}</span>
+        <svg className="dd-chev" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M2.5 4.5L6 8l3.5-3.5" />
+        </svg>
+      </button>
+      {open && (
+        <div className={clsx('dd-menu float', align === 'left' && 'left')} role="listbox" aria-label={label}>
+          {options.map((o) => {
+            const active = o.value === value
+            return (
+              <button
+                key={String(o.value)}
+                type="button"
+                role="option"
+                aria-selected={active}
+                className={clsx('dd-opt', active && 'on')}
+                onClick={() => { onChange(o.value); setOpen(false) }}
+              >
+                <span>{o.label}</span>
+                {active && (
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3.5 8.5l3 3 6-6.5" />
+                  </svg>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- Toast ----
 type ToastItem = { id: number; text: string; kind: 'ok' | 'err' | 'info' }
 const ToastCtx = createContext<(text: string, kind?: ToastItem['kind']) => void>(() => {})

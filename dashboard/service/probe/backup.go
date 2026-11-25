@@ -347,6 +347,110 @@ func ApplyRestore(archive string, p Paths, dir string) error {
 	return nil
 }
 
+// BackupEntry 表示 data/backups/ 中的一个本地备份文件。
+type BackupEntry struct {
+	Name    string    `json:"name"`
+	Size    int64     `json:"size"`
+	ModTime time.Time `json:"mod_time"`
+}
+
+func isSafeBackupName(name string) bool {
+	if name == "" || strings.ContainsAny(name, `/\`) || filepath.Base(name) != name {
+		return false
+	}
+	return strings.HasPrefix(name, "probe-backup-") && strings.HasSuffix(name, ".tar.gz")
+}
+
+// ListBackups 列出 data/backups/ 中所有本地备份文件（按时间倒序）。
+func ListBackups() ([]BackupEntry, error) {
+	dir := filepath.Join(dataDir, "backups")
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return []BackupEntry{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []BackupEntry
+	for _, e := range entries {
+		if e.IsDir() || !isSafeBackupName(e.Name()) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		out = append(out, BackupEntry{
+			Name:    e.Name(),
+			Size:    info.Size(),
+			ModTime: info.ModTime(),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ModTime.After(out[j].ModTime)
+	})
+	if out == nil {
+		out = []BackupEntry{}
+	}
+	return out, nil
+}
+
+// BackupPath 校验文件名并返回本地备份的完整路径。
+func BackupPath(name string) (string, error) {
+	if !isSafeBackupName(name) {
+		return "", errors.New("非法的备份文件名")
+	}
+	p := filepath.Join(dataDir, "backups", name)
+	st, err := os.Stat(p)
+	if err != nil || st.IsDir() {
+		return "", errors.New("备份文件不存在")
+	}
+	return p, nil
+}
+
+// DeleteBackup 删除指定的本地备份文件。
+func DeleteBackup(name string) error {
+	p, err := BackupPath(name)
+	if err != nil {
+		return err
+	}
+	return os.Remove(p)
+}
+
+// StageLocalBackupRestore 校验并暂存指定的本地备份文件，待重启时恢复。
+func StageLocalBackupRestore(name string) error {
+	src, err := BackupPath(name)
+	if err != nil {
+		return err
+	}
+	if _, err := ValidateBackup(src); err != nil {
+		return err
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp, err := os.CreateTemp(dataDir, ".local-restore-*.tar.gz")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	_, err = io.Copy(tmp, in)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, PendingRestorePath(dataDir)); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
 // ApplyPendingRestore 若存在待恢复文件则应用并删除它。
 func ApplyPendingRestore(p Paths, dir string) error {
 	pending := PendingRestorePath(dir)

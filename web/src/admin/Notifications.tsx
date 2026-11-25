@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { IEdit, IPlus, ITrash } from '../components/icons'
 import { Field, Modal } from '../components/ui'
 import { api, type Notification, type NotificationGroup } from '../lib/api'
-import { PageHead, confirmDelete, useAction, useList } from './common'
+import { PageHead, useAction, useConfirmDelete, useList } from './common'
 
 export default function Notifications() {
   const { data, reload } = useList<Notification>('/notification')
@@ -10,33 +11,35 @@ export default function Notifications() {
   const [edit, setEdit] = useState<Notification | 'new' | null>(null)
   const [editGroup, setEditGroup] = useState<NotificationGroup | 'new' | null>(null)
   const { run } = useAction()
+  const confirmDelete = useConfirmDelete()
 
   const del = async (n: Notification) => {
-    if (!confirmDelete(n.name)) return
+    if (!(await confirmDelete(n.name))) return
     if (await run(() => api('/batch-delete/notification', { method: 'POST', body: [n.id] }), '已删除')) reload()
   }
   const delGroup = async (g: NotificationGroup) => {
-    if (!confirmDelete(g.group.name)) return
+    if (!(await confirmDelete(g.group.name))) return
     if (await run(() => api('/batch-delete/notification-group', { method: 'POST', body: [g.group.id] }), '已删除')) reloadGroups()
   }
 
   return (
     <>
-      <PageHead title="通知方式" desc={<>面板自带的 Webhook 通知，用于告警规则与延迟监控。交互式 TG 机器人（/list、到期提醒、自动备份）在 <code>data/probe.yaml</code> 里配置。</>}>
+      <PageHead title="通知方式" desc={<>面板自带的 Webhook 通知，用于告警规则与延迟监控。交互式 TG 机器人（/list、到期提醒、自动备份）可在 <Link to="/dashboard/probe" style={{ textDecoration: 'underline' }}>探针配置</Link> 中管理。</>}>
         <button className="btn primary" onClick={() => setEdit('new')}><IPlus />添加通知</button>
       </PageHead>
       <div className="glass table-wrap" style={{ marginBottom: 24 }}>
-        <table className="t">
+        <table className="t stack">
           <thead><tr><th>名称</th><th>方式</th><th /></tr></thead>
           <tbody>
+            {data === null && <tr><td colSpan={3} className="empty">加载中…</td></tr>}
             {data?.length === 0 && <tr><td colSpan={3} className="empty">还没有通知方式</td></tr>}
             {data?.map((n) => (
               <tr key={n.id}>
-                <td><b>{n.name}</b></td>
-                <td><span className="tag plain">{n.request_method === 2 ? 'POST' : 'GET'}</span> <span className="tag plain">{n.request_type === 2 ? 'Form' : 'JSON'}</span></td>
+                <td className="first"><b>{n.name}</b></td>
+                <td data-l="方式"><span className="tag plain">{n.request_method === 2 ? 'POST' : 'GET'}</span> <span className="tag plain">{n.request_type === 2 ? 'Form' : 'JSON'}</span></td>
                 <td><div className="act">
                   <button className="btn sm" onClick={() => setEdit(n)}><IEdit />编辑</button>
-                  <button className="btn sm danger" onClick={() => del(n)}><ITrash /></button>
+                  <button className="btn sm ghost danger" onClick={() => del(n)} aria-label="删除"><ITrash /></button>
                 </div></td>
               </tr>
             ))}
@@ -48,17 +51,24 @@ export default function Notifications() {
         <button className="btn" onClick={() => setEditGroup('new')}><IPlus />新建通知组</button>
       </PageHead>
       <div className="glass table-wrap">
-        <table className="t">
+        <table className="t stack">
           <thead><tr><th>名称</th><th>包含</th><th /></tr></thead>
           <tbody>
+            {groups === null && <tr><td colSpan={3} className="empty">加载中…</td></tr>}
             {groups?.length === 0 && <tr><td colSpan={3} className="empty">还没有通知组</td></tr>}
             {groups?.map((g) => (
               <tr key={g.group.id}>
-                <td><b>{g.group.name}</b></td>
-                <td><div className="wrap">{(g.notifications || []).map((id) => <span key={id} className="tag plain">{data?.find((n) => n.id === id)?.name || `#${id}`}</span>)}</div></td>
+                <td className="first"><b>{g.group.name}</b></td>
+                <td data-l="包含">
+                  <div className="wrap">
+                    {(g.notifications || []).length === 0
+                      ? <span className="faint">未包含通知方式</span>
+                      : (g.notifications || []).map((id) => <span key={id} className="tag plain">{data?.find((n) => n.id === id)?.name || `#${id}`}</span>)}
+                  </div>
+                </td>
                 <td><div className="act">
                   <button className="btn sm" onClick={() => setEditGroup(g)}><IEdit />编辑</button>
-                  <button className="btn sm danger" onClick={() => delGroup(g)}><ITrash /></button>
+                  <button className="btn sm ghost danger" onClick={() => delGroup(g)} aria-label="删除"><ITrash /></button>
                 </div></td>
               </tr>
             ))}

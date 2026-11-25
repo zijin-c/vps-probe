@@ -206,6 +206,40 @@ export interface NotificationGroup {
   notifications?: number[] | null
 }
 
+// ---- 探针扩展配置（probe.yaml）与本地备份 ----
+export interface ProbeConfigView {
+  telegram: {
+    has_bot_token: boolean
+    chat_ids: number[]
+    api_base: string
+    notify_offline: boolean
+    offline_seconds: number
+    traffic_percents: number[]
+    expire_days: number[]
+    notify_hour: number
+    running: boolean
+  }
+  backup: {
+    daily: boolean
+    hour: number
+    keep: number
+    send_to_telegram: boolean
+    include_history: boolean
+  }
+  quality: {
+    interval_hours: number
+    has_ipinfo_token: boolean
+    has_abuseipdb_key: boolean
+    has_ip2location_key: boolean
+  }
+}
+
+export interface LocalBackupEntry {
+  name: string
+  size: number
+  mod_time: string
+}
+
 // ---- IP 质量 / 线路质量（Agent 内置检测，经面板 /api/v1/probe/quality 下发）----
 export interface IPSource {
   name: string            // 数据库名，如 ipinfo / ipapi.is

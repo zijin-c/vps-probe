@@ -64,6 +64,11 @@ export function fmtDate(d: Date | undefined, withTime = false): string {
   return withTime ? `${s} ${p(d.getHours())}:${p(d.getMinutes())}` : s
 }
 
+export function fmtTime(ts: number | undefined): string {
+  if (!ts || isNaN(ts)) return '—'
+  return fmtDate(new Date(ts), true)
+}
+
 export function fmtAxisTime(ts: number, spanMs: number): string {
   const d = new Date(ts)
   const p = (n: number) => String(n).padStart(2, '0')

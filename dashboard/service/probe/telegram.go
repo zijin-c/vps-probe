@@ -468,6 +468,52 @@ func (s *notifyState) mark(key string) bool {
 
 // ---- 后台任务 ----
 
+var (
+	botRunMu   sync.RWMutex
+	botRunning bool
+)
+
+func isBotRunning() bool {
+	botRunMu.RLock()
+	defer botRunMu.RUnlock()
+	return botRunning
+}
+
+// TestTelegram 使用当前配置（或传入的临时覆盖项）向指定 chat_ids 发送一条测试消息。
+func TestTelegram(tokenOverride string, apiBaseOverride string, chatIDsOverride []int64) error {
+	c := getConf().Telegram
+	if strings.TrimSpace(tokenOverride) != "" && strings.TrimSpace(tokenOverride) != "-" {
+		c.BotToken = strings.TrimSpace(tokenOverride)
+	}
+	if strings.TrimSpace(apiBaseOverride) != "" {
+		c.APIBase = strings.TrimRight(strings.TrimSpace(apiBaseOverride), "/")
+	}
+	if len(chatIDsOverride) > 0 {
+		c.ChatIDs = chatIDsOverride
+	}
+	if c.BotToken == "" {
+		return fmt.Errorf("未配置 Bot Token")
+	}
+	if len(c.ChatIDs) == 0 {
+		return fmt.Errorf("未配置 Chat ID")
+	}
+	tb := &bot{conf: c, client: &http.Client{Timeout: 20 * time.Second}}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	var firstErr error
+	for _, id := range c.ChatIDs {
+		p := url.Values{}
+		p.Set("chat_id", strconv.FormatInt(id, 10))
+		p.Set("text", "✅ <b>VPS 探针</b>：Telegram 通知测试成功。")
+		p.Set("parse_mode", "HTML")
+		p.Set("disable_web_page_preview", "true")
+		if err := tb.call(ctx, "sendMessage", p, nil); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // Start 启动机器人与定时任务（备份即使不配置 TG 也会运行）。
 func Start() {
 	c := getConf()
@@ -477,6 +523,9 @@ func Start() {
 	var b *bot
 	if c.Telegram.BotToken != "" {
 		b = &bot{conf: c.Telegram, client: &http.Client{Timeout: 90 * time.Second}}
+		botRunMu.Lock()
+		botRunning = true
+		botRunMu.Unlock()
 		go b.registerCommands()
 		go b.poll()
 		log.Printf("PROBE>> Telegram 机器人已启动，授权 chat: %v", c.Telegram.ChatIDs)

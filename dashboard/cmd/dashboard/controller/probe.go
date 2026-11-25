@@ -47,6 +47,14 @@ func registerProbeRoutes(r *gin.Engine, authMw, optionalAuthMw gin.HandlerFunc) 
 	g := r.Group("api/v1/probe", authMw, csrfMiddleware(), restScopeMiddleware(model.ScopeAdminAll), probeAdminOnly)
 	g.GET("/backup", probeDownloadBackup)
 	g.POST("/restore", probeUploadRestore)
+	g.GET("/backups", probeListBackups)
+	g.POST("/backups", probeCreateBackup)
+	g.GET("/backups/:name", probeDownloadLocalBackup)
+	g.DELETE("/backups/:name", probeDeleteLocalBackup)
+	g.POST("/backups/:name/restore", probeRestoreLocalBackup)
+	g.GET("/config", probeGetConfig)
+	g.PATCH("/config", probeSaveConfig)
+	g.POST("/telegram/test", probeTestTelegram)
 }
 
 var probeAgentFiles = map[string]string{
@@ -237,4 +245,101 @@ func probeUploadRestore(c *gin.Context) {
 	log.Printf("PROBE>> 已接收恢复文件 %s，面板即将重启以应用", filepath.Base(fh.Filename))
 	c.JSON(http.StatusOK, model.CommonResponse[string]{Success: true, Data: "备份校验通过，面板正在重启并恢复数据，约 10 秒后刷新页面"})
 	go probe.RequestRestart()
+}
+
+func probeListBackups(c *gin.Context) {
+	items, err := probe.ListBackups()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, newErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.CommonResponse[[]probe.BackupEntry]{Success: true, Data: items})
+}
+
+func probeCreateBackup(c *gin.Context) {
+	var body struct {
+		IncludeHistory bool `json:"include_history"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	keep := probe.GetConfigView().Backup.Keep
+	if keep <= 0 {
+		keep = 7
+	}
+	path, err := probe.BackupToDir(body.IncludeHistory, keep)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, newErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.CommonResponse[string]{Success: true, Data: filepath.Base(path)})
+}
+
+func probeDownloadLocalBackup(c *gin.Context) {
+	name := c.Param("name")
+	p, err := probe.BackupPath(name)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, newErrorResponse(err))
+		return
+	}
+	c.Header("Content-Type", "application/gzip")
+	c.Header("Content-Disposition", `attachment; filename="`+name+`"`)
+	c.Header("Cache-Control", "no-store")
+	c.File(p)
+}
+
+func probeDeleteLocalBackup(c *gin.Context) {
+	name := c.Param("name")
+	if err := probe.DeleteBackup(name); err != nil {
+		c.JSON(http.StatusBadRequest, newErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.CommonResponse[any]{Success: true})
+}
+
+func probeRestoreLocalBackup(c *gin.Context) {
+	name := c.Param("name")
+	if err := probe.StageLocalBackupRestore(name); err != nil {
+		c.JSON(http.StatusBadRequest, newErrorResponse(err))
+		return
+	}
+	log.Printf("PROBE>> 已选定本地备份 %s，面板即将重启以应用", name)
+	c.JSON(http.StatusOK, model.CommonResponse[string]{Success: true, Data: "备份校验通过，面板正在重启并恢复数据，约 10 秒后刷新页面"})
+	go probe.RequestRestart()
+}
+
+func probeGetConfig(c *gin.Context) {
+	c.JSON(http.StatusOK, model.CommonResponse[probe.ConfigView]{Success: true, Data: probe.GetConfigView()})
+}
+
+func probeSaveConfig(c *gin.Context) {
+	var patch probe.ConfigPatch
+	if err := c.ShouldBindJSON(&patch); err != nil {
+		c.JSON(http.StatusBadRequest, newErrorResponse(err))
+		return
+	}
+	needRestart, err := probe.SaveConfigPatch(patch)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, newErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.CommonResponse[map[string]any]{
+		Success: true,
+		Data: map[string]any{
+			"need_restart": needRestart,
+			"config":       probe.GetConfigView(),
+		},
+	})
+}
+
+func probeTestTelegram(c *gin.Context) {
+	var body struct {
+		BotToken string  `json:"bot_token"`
+		APIBase  string  `json:"api_base"`
+		ChatIDs  []int64 `json:"chat_ids"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	if err := probe.TestTelegram(body.BotToken, body.APIBase, body.ChatIDs); err != nil {
+		c.JSON(http.StatusOK, newErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.CommonResponse[string]{Success: true, Data: "测试消息已发送"})
 }

@@ -49,8 +49,6 @@ export function RouteTags({ brief, manual }: { brief?: QualityBrief; manual?: st
   return <>{splitTags(manual).map((t) => <span key={t} className="tag route">{t}</span>)}</>
 }
 
-const UNLOCK_SHORT: Record<string, string> = { 'YouTube Premium': 'YouTube', 'Prime Video': 'Prime' }
-
 function Stat({ k, v, unit, sub, p, tone, format, still }: {
   k: string; v: number; unit?: string; sub: string; p: number; tone?: Tone; format?: (n: number) => string
   still?: boolean // 带单位换算的值不做过渡，否则数字和单位会对不上
@@ -78,7 +76,6 @@ export default function ServerCard({ s, traffic, latency, brief }: { s: LiveServ
   const exp = expiryText(s.billing)
   const lines = (latency || []).slice(0, 3)
   const meta = [osLabel(h.platform), h.virtualization, cores ? `${cores} 核` : '', h.mem_total ? fmtBytes(h.mem_total, 0) : ''].filter(Boolean)
-  const unlocked = (brief?.unlock || []).filter((u) => u.status === 'yes').slice(0, 4)
   const hasRoutes = !!(brief?.routes && Object.keys(brief.routes).length) || !!plan.networkRoute
   // 手填标签若与自动识别重复（如"原生IP"）就不再显示
   const extras = splitTags(plan.extra).filter((t) => !(brief?.ip_type && /^(原生|广播)\s*IP$/i.test(t)))
@@ -140,12 +137,11 @@ export default function ServerCard({ s, traffic, latency, brief }: { s: LiveServ
         </div>
       )}
 
-      {(hasRoutes || unlocked.length > 0 || brief?.ip_type || extras.length > 0) && (
+      {(hasRoutes || brief?.ip_type || extras.length > 0) && (
         <div className="qrow">
           <RouteTags brief={brief} manual={plan.networkRoute} />
           {brief?.ip_type === 'native' && <span className="tag ok">原生 IP</span>}
           {brief?.ip_type === 'broadcast' && <span className="tag plain">广播 IP</span>}
-          {unlocked.map((u) => <span key={u.name} className="tag info" title={`${u.name} 已解锁${u.region ? `（${u.region}）` : ''}`}>{UNLOCK_SHORT[u.name] || u.name}</span>)}
           {extras.map((t) => <span key={t} className="tag plain">{t}</span>)}
         </div>
       )}
