@@ -1,0 +1,158 @@
+package singleton
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"time"
+
+	"github.com/nezhahq/nezha/model"
+)
+
+// A fixed stripe set bounds lock storage. Ownership publication and sensitive
+// operation admission share these locks, closing check-then-transfer races.
+var serverControlLocks [256]sync.RWMutex
+
+func lockServerControlTransition(serverID uint64) func() {
+	lock := &serverControlLocks[serverID%uint64(len(serverControlLocks))]
+	lock.Lock()
+	return lock.Unlock
+}
+
+func ServerControlTransitioning(serverID uint64) bool {
+	transfer := ServerTransferShared
+	if transfer == nil {
+		return false
+	}
+	transfer.mu.RLock()
+	defer transfer.mu.RUnlock()
+	return transfer.initiating[serverID] || transfer.pending[serverID] != nil ||
+		rollbackAwaitsAgentRotation(transfer.terminalSecretRecovery[serverID]) ||
+		rollbackAwaitsAgentRotation(transfer.revertDeliveries[serverID])
+}
+
+// rollbackAwaitsAgentRotation 判断一条已回滚的转移是否仍要求“等 agent 换回凭据”
+// 才放行对服务器的操作。两种情况不再等：
+//
+//   - 超过了恢复窗口。这两张表只在按密钥查找时才顺带清理过期项，没有人查的话
+//     记录会一直留着；只看“记录在不在”，来源用户就永远开不了自己服务器的终端。
+//   - 转移是以 Failed 结束的。Failed 只有两个来源：agent 版本太旧不认识这个任务，
+//     或 agent 明确回报拒绝（明文 gRPC、InsecureTLS、禁用命令执行时一律拒绝）。
+//     两种情况下 agent 都没有动过凭据，没有什么需要换回来的；而它对随后的回滚
+//     推送同样会拒绝，永远等不到确认。
+func rollbackAwaitsAgentRotation(t *model.ServerTransfer) bool {
+	if t == nil || t.Status == model.ServerTransferStatusFailed {
+		return false
+	}
+	return !t.UpdatedAt.Before(time.Now().Add(-defaultRevertDeliveryRecoveryWindow))
+}
+
+// ServerOwnershipSettled reports whether userID owns the server with no
+// transfer still waiting for the agent to rotate. Register publishes the
+// destination as owner first, while Cancel/Fail/Timeout still hand the server
+// back, so until then an owner match must not let them edit or delete the
+// record: a delete also drops the pending entry that control admission and
+// agent auth are keyed on, and frees the UUID. Narrower than
+// ServerControlTransitioning on purpose: after a rollback the record is the
+// previous owner's again, even before the agent acknowledges it. Owner and
+// pending state are read under the lock they are published under.
+func ServerOwnershipSettled(serverID, userID uint64) bool {
+	lock := &serverControlLocks[serverID%uint64(len(serverControlLocks))]
+	lock.RLock()
+	defer lock.RUnlock()
+	server, ok := ServerShared.Get(serverID)
+	if !ok || server == nil {
+		return true // Unknown IDs have no ownership to settle.
+	}
+	if server.GetUserID() != userID {
+		return false
+	}
+	transfer := ServerTransferShared
+	if transfer == nil {
+		return true
+	}
+	transfer.mu.RLock()
+	defer transfer.mu.RUnlock()
+	return !transfer.initiating[serverID] && transfer.pending[serverID] == nil
+}
+
+// BeginServerControl returns a lease held until task dispatch / stream
+// registration finishes. Rollback remains blocked until the agent proves it
+// rotated credentials, rather than merely until the transfer row is terminal.
+func BeginServerControl(serverID, userID uint64, admin bool) (func(), *model.Server, error) {
+	lock := &serverControlLocks[serverID%uint64(len(serverControlLocks))]
+	lock.RLock()
+	server, ok := ServerShared.Get(serverID)
+	if !ok || server == nil || (!admin && (server.GetUserID() != userID || ServerControlTransitioning(serverID))) {
+		lock.RUnlock()
+		return nil, nil, errors.New("server access denied during ownership or credential transition")
+	}
+	return lock.RUnlock, server, nil
+}
+
+type serverControlIdentityKey struct{}
+type serverControlEpochKey struct{}
+
+func WithServerControlEpoch(ctx context.Context, epoch uint64) context.Context {
+	return context.WithValue(ctx, serverControlEpochKey{}, epoch)
+}
+
+type ServerControlIdentity struct {
+	UserID uint64
+	Admin  bool
+}
+
+func WithServerControlIdentity(ctx context.Context, userID uint64, admin bool) context.Context {
+	return context.WithValue(ctx, serverControlIdentityKey{}, ServerControlIdentity{userID, admin})
+}
+func BeginServerControlFromContext(ctx context.Context, serverID uint64) (func(), error) {
+	identity, ok := ctx.Value(serverControlIdentityKey{}).(ServerControlIdentity)
+	if !ok { // Internal callers still cannot operate on a transitioning server.
+		if ServerControlTransitioning(serverID) {
+			return nil, errors.New("server credential transition in progress")
+		}
+		return func() {}, nil
+	}
+	release, _, err := BeginServerControl(serverID, identity.UserID, identity.Admin)
+	if err != nil {
+		return nil, err
+	}
+	// Recheck the URL generation under the same lease as final stream admission.
+	if epoch, bound := ctx.Value(serverControlEpochKey{}).(uint64); bound && epoch != ServerControlEpoch(serverID) {
+		release()
+		return nil, errors.New("target server ownership changed since URL issuance")
+	}
+	return release, nil
+}
+
+// ServerTaskAdmission resolves both role and ownership at delivery time.
+func ServerTaskAdmission(serverID, userID uint64) func() (func(), error) {
+	return func() (func(), error) {
+		release, _, err := BeginServerControl(serverID, userID, userIsAdmin(userID))
+		return release, err
+	}
+}
+
+// serverTaskResultAdmitted is the inbound dual of ServerTaskAdmission: a task
+// result counts for userID's monitor or cron only while that task could still
+// be dispatched to the reporter. During a transfer Server.UserID already names
+// the destination user while the Agent stream may still authenticate with the
+// previous owner's secret, so ownership alone does not prove who is reporting.
+func serverTaskResultAdmitted(reporter *model.Server, userID uint64) bool {
+	if userIsAdmin(userID) {
+		return true
+	}
+	return reporter.GetUserID() == userID && !ServerControlTransitioning(reporter.ID)
+}
+
+// ServerControlEpoch invalidates derived URLs permanently on each transfer.
+// Tokens and epochs are both process-local; rollback never restores an old epoch.
+func ServerControlEpoch(serverID uint64) uint64 {
+	transfer := ServerTransferShared
+	if transfer == nil {
+		return 0
+	}
+	transfer.mu.RLock()
+	defer transfer.mu.RUnlock()
+	return transfer.controlEpoch[serverID]
+}
