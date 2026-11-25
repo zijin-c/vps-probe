@@ -74,14 +74,14 @@ func routers(r *gin.Engine, frontendDist fs.FS) {
 		c.Header("Referrer-Policy", "no-referrer")
 		c.Next()
 	}, fallbackToFrontend(frontendDist))
-	r.POST("/mcp", mcpOriginGuard(), mcpOAuthAccessAuth, apiTokenAuthMiddleware(), mcpEndpoint)
+	r.POST("/mcp", mcpOriginGuard(), mcpOAuthAccessAuth, readOnlyForbidden)
 	// Streamable HTTP 规范要求：不实现 standalone SSE / session 时，GET / DELETE
 	// 必须显式返回 405，让客户端走 POST-only 路径并跳过 session 终止流程。
 	// 不显式注册时，Gin 会走 NoRoute → fallbackToFrontend，对 MCP 客户端是 HTML/404。
 	r.GET("/mcp", mcpOriginGuard(), mcpMethodNotAllowed)
 	r.DELETE("/mcp", mcpOriginGuard(), mcpMethodNotAllowed)
-	r.GET("/mcp/download/:token", mcpOriginGuard(), transferDownloadHandler)
-	r.POST("/mcp/upload/:token", mcpOriginGuard(), transferUploadHandler)
+	r.GET("/mcp/download/:token", readOnlyForbidden)
+	r.POST("/mcp/upload/:token", readOnlyForbidden)
 	registerAgentcompatRoutes(r)
 
 	// 所有 /api/v1 请求体统一限长：ShouldBindJSON 会完整读取请求体
@@ -121,6 +121,7 @@ func routers(r *gin.Engine, frontendDist fs.FS) {
 	// PAT bearer requests bypass — so the only callers gated are
 	// cookie-JWT POST/PATCH/PUT/DELETE, which is exactly the H6 surface.
 	auth := api.Group("", authMw, csrfMiddleware())
+	registerProbeRoutes(r, authMw) // 只读分支：备份/恢复
 
 	// 「自我管理」类端点 — 显式禁止 PAT 访问（避免 PAT 自我提权链）。
 	patForbidden := restPATForbiddenMiddleware()
@@ -146,17 +147,17 @@ func routers(r *gin.Engine, frontendDist fs.FS) {
 	//     删除 server / server-group）。这是管理后台清单管理动作。
 	//   - nezha:server:*    —— 对已知 server 的运行态操作（exec、文件读写、编辑配置、
 	//     force-update、batch-move）。
-	auth.POST("/terminal", restScopeMiddleware(model.ScopeServerExec), commonHandler(createTerminal))
-	auth.GET("/ws/terminal/:id", restScopeMiddleware(model.ScopeServerExec), commonHandler(terminalStream))
-	auth.POST("/file", restScopeAllOf(model.ScopeServerRead, model.ScopeServerWrite, model.ScopeServerDelete), commonHandler(createFM))
-	auth.GET("/ws/file/:id", restScopeAllOf(model.ScopeServerRead, model.ScopeServerWrite, model.ScopeServerDelete), commonHandler(fmStream))
+	auth.POST("/terminal", restScopeMiddleware(model.ScopeServerExec), readOnlyForbidden)
+	auth.GET("/ws/terminal/:id", restScopeMiddleware(model.ScopeServerExec), readOnlyForbidden)
+	auth.POST("/file", restScopeAllOf(model.ScopeServerRead, model.ScopeServerWrite, model.ScopeServerDelete), readOnlyForbidden)
+	auth.GET("/ws/file/:id", restScopeAllOf(model.ScopeServerRead, model.ScopeServerWrite, model.ScopeServerDelete), readOnlyForbidden)
 	auth.GET("/server", restScopeMiddleware(model.ScopeInventoryRead), listHandler(listServer))
 	auth.PATCH("/server/:id", restScopeMiddleware(model.ScopeServerWrite), commonHandler(updateServer))
-	auth.GET("/server/config/:id", restScopeMiddleware(serverConfigSensitiveScope()), commonHandler(getServerConfig))
-	auth.POST("/server/config", restScopeMiddleware(model.ScopeServerWrite), commonHandler(setServerConfig))
+	auth.GET("/server/config/:id", restScopeMiddleware(serverConfigSensitiveScope()), readOnlyForbidden)
+	auth.POST("/server/config", restScopeMiddleware(model.ScopeServerWrite), readOnlyForbidden)
 	auth.POST("/batch-delete/server", restScopeMiddleware(model.ScopeInventoryDelete), commonHandler(batchDeleteServer))
 	auth.POST("/batch-move/server", restScopeMiddleware(model.ScopeServerWrite), commonHandler(batchMoveServer))
-	auth.POST("/force-update/server", restScopeMiddleware(model.ScopeServerWrite), commonHandler(forceUpdateServer))
+	auth.POST("/force-update/server", restScopeMiddleware(model.ScopeServerWrite), readOnlyForbidden)
 	auth.POST("/server-group", restScopeMiddleware(model.ScopeServerWrite), commonHandler(createServerGroup))
 	auth.PATCH("/server-group/:id", restScopeMiddleware(model.ScopeServerWrite), commonHandler(updateServerGroup))
 	auth.POST("/batch-delete/server-group", restScopeMiddleware(model.ScopeInventoryDelete), commonHandler(batchDeleteServerGroup))
@@ -192,9 +193,9 @@ func routers(r *gin.Engine, frontendDist fs.FS) {
 	auth.POST("/batch-delete/alert-rule", restScopeMiddleware(model.ScopeAlertRuleDelete), commonHandler(batchDeleteAlertRule))
 
 	auth.GET("/cron", restScopeMiddleware(model.ScopeCronRead), listHandler(listCron))
-	auth.POST("/cron", restScopeMiddleware(model.ScopeCronWrite), commonHandler(createCron))
-	auth.PATCH("/cron/:id", restScopeMiddleware(model.ScopeCronWrite), commonHandler(updateCron))
-	auth.POST("/cron/:id/manual", restScopeMiddleware(model.ScopeCronExec), commonHandler(manualTriggerCron))
+	auth.POST("/cron", restScopeMiddleware(model.ScopeCronWrite), readOnlyForbidden)
+	auth.PATCH("/cron/:id", restScopeMiddleware(model.ScopeCronWrite), readOnlyForbidden)
+	auth.POST("/cron/:id/manual", restScopeMiddleware(model.ScopeCronExec), readOnlyForbidden)
 	auth.POST("/batch-delete/cron", restScopeMiddleware(model.ScopeCronDelete), commonHandler(batchDeleteCron))
 
 	auth.GET("/ddns", restScopeMiddleware(model.ScopeDDNSRead), listHandler(listDDNS))
@@ -204,8 +205,8 @@ func routers(r *gin.Engine, frontendDist fs.FS) {
 	auth.POST("/batch-delete/ddns", restScopeMiddleware(model.ScopeDDNSDelete), commonHandler(batchDeleteDDNS))
 
 	auth.GET("/nat", restScopeMiddleware(model.ScopeNATRead), listHandler(listNAT))
-	auth.POST("/nat", restScopeMiddleware(model.ScopeNATWrite), commonHandler(createNAT))
-	auth.PATCH("/nat/:id", restScopeMiddleware(model.ScopeNATWrite), commonHandler(updateNAT))
+	auth.POST("/nat", restScopeMiddleware(model.ScopeNATWrite), readOnlyForbidden)
+	auth.PATCH("/nat/:id", restScopeMiddleware(model.ScopeNATWrite), readOnlyForbidden)
 	auth.POST("/batch-delete/nat", restScopeMiddleware(model.ScopeNATDelete), commonHandler(batchDeleteNAT))
 
 	// 管理员资源 — 仅 nezha:* / nezha:admin:* 持有者可调（adminHandler 进一步校验 user.Role）。

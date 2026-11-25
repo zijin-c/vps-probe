@@ -26,6 +26,7 @@ import (
 	"github.com/nezhahq/nezha/pkg/idcodec"
 	"github.com/nezhahq/nezha/pkg/utils"
 	"github.com/nezhahq/nezha/proto"
+	"github.com/nezhahq/nezha/service/probe"
 	"github.com/nezhahq/nezha/service/singleton"
 )
 
@@ -33,6 +34,8 @@ type DashboardCliParam struct {
 	Version          bool
 	ConfigFile       string
 	DatabaseLocation string
+	Backup           string // 只读分支：导出备份到文件后退出
+	Restore          string // 只读分支：从备份恢复后退出（需先停止面板）
 }
 
 var (
@@ -136,10 +139,16 @@ func main() {
 	flag.BoolVar(&dashboardCliParam.Version, "v", false, "查看当前版本号")
 	flag.StringVar(&dashboardCliParam.ConfigFile, "c", "data/config.yaml", "配置文件路径")
 	flag.StringVar(&dashboardCliParam.DatabaseLocation, "db", "data/sqlite.db", "Sqlite3数据库文件路径")
+	flag.StringVar(&dashboardCliParam.Backup, "backup", "", "导出备份到指定文件（.tar.gz）后退出")
+	flag.StringVar(&dashboardCliParam.Restore, "restore", "", "从备份文件恢复后退出（请先停止面板）")
 	flag.Parse()
 
 	if dashboardCliParam.Version {
 		fmt.Println(singleton.Version)
+		os.Exit(0)
+	}
+
+	if runProbeCli() {
 		os.Exit(0)
 	}
 
@@ -181,6 +190,7 @@ func main() {
 	})
 	go rpc.DispatchTask(serviceSentinelDispatchBus)
 	go singleton.AlertSentinelStart()
+	probe.Start() // 只读分支：TG 机器人、到期/流量/离线提醒、每日自动备份
 
 	grpcHandler := rpc.ServeRPC()
 	httpHandler := controller.ServeWeb(frontendDist)
@@ -243,6 +253,9 @@ func main() {
 	}
 
 	close(errChan)
+	if probe.RestartRequested() {
+		os.Exit(1) // 非零退出码，确保 docker/systemd 拉起新进程以应用恢复
+	}
 }
 
 // wireNATDashboardCredentialGate connects the NAT ingress to the real

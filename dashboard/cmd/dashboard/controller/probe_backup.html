@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>备份与恢复</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1d2330; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --danger:#dc2626; --ok:#059669; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --card:#181c24; --fg:#e6e8ec; --muted:#9aa3b2; --line:#2a303b; --accent:#5b8cff; --danger:#f87171; --ok:#34d399; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:32px 16px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:16px; }
+  h2 { font-size:16px; margin:0 0 8px; }
+  p { margin:0 0 12px; color:var(--muted); }
+  label { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:9px 16px; font-size:14px; cursor:pointer; }
+  button.danger { background:var(--danger); }
+  button:disabled { opacity:.5; cursor:default; }
+  input[type=file] { display:block; margin-bottom:12px; max-width:100%; }
+  #msg { min-height:1.6em; margin-top:12px; white-space:pre-wrap; }
+  .ok { color:var(--ok); } .err { color:var(--danger); }
+  a { color:var(--accent); }
+  code { background:var(--bg); padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>备份与恢复</h1>
+  <p class="sub">需要先在 <a href="/dashboard">后台</a> 以管理员身份登录。</p>
+
+  <section>
+    <h2>下载备份</h2>
+    <p>包含服务器列表与 Agent 密钥、分组、账单备注、告警与通知、服务监控、流量记录、用户与面板配置、TG 机器人配置。重新部署后导入即可，Agent 无需重装。</p>
+    <label><input type="checkbox" id="history"> 同时包含监控历史（TSDB，体积较大）</label>
+    <button id="dl">下载备份</button>
+  </section>
+
+  <section>
+    <h2>从备份恢复</h2>
+    <p>会<b>整体替换</b>当前数据，旧数据自动另存到 <code>data/backups/pre-restore-时间/</code>。面板会自动重启（需 docker <code>restart: always</code> 或 systemd <code>Restart=always</code>）。</p>
+    <input type="file" id="file" accept=".gz,.tar.gz,application/gzip">
+    <button class="danger" id="up">上传并恢复</button>
+  </section>
+  <div id="msg"></div>
+</main>
+<script>
+  const msg = document.getElementById('msg');
+  const say = (t, cls) => { msg.textContent = t; msg.className = cls || ''; };
+  const csrf = () => (document.cookie.split('; ').find(c => c.startsWith('nz-csrf=')) || '').slice(8);
+
+  async function ensureCsrf() {
+    if (!csrf()) { try { await fetch('/api/v1/profile', { credentials: 'same-origin' }); } catch (e) {} }
+  }
+
+  document.getElementById('dl').onclick = async () => {
+    say('正在生成备份…');
+    const h = document.getElementById('history').checked ? '1' : '0';
+    try {
+      const r = await fetch('/api/v1/probe/backup?history=' + h, { credentials: 'same-origin' });
+      if (!r.ok || !(r.headers.get('content-type') || '').includes('gzip')) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.error || ('HTTP ' + r.status + '，请先登录管理员账号'));
+      }
+      const name = (r.headers.get('content-disposition') || '').match(/filename="([^"]+)"/)?.[1] || 'probe-backup.tar.gz';
+      const blob = await r.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      say('已下载 ' + name + '（' + (blob.size / 1048576).toFixed(2) + ' MB）。文件含密钥，请妥善保管。', 'ok');
+    } catch (e) { say('下载失败：' + e.message, 'err'); }
+  };
+
+  document.getElementById('up').onclick = async () => {
+    const f = document.getElementById('file').files[0];
+    if (!f) return say('请先选择备份文件', 'err');
+    if (!confirm('确定用 ' + f.name + ' 覆盖当前全部数据吗？')) return;
+    const btn = document.getElementById('up'); btn.disabled = true;
+    say('上传中…');
+    try {
+      await ensureCsrf();
+      const fd = new FormData(); fd.append('file', f);
+      const r = await fetch('/api/v1/probe/restore', { method: 'POST', body: fd, credentials: 'same-origin', headers: { 'X-CSRF-Token': csrf() } });
+      const j = await r.json().catch(() => ({}));
+      if (!j.success) throw new Error(j.error || ('HTTP ' + r.status));
+      say(j.data, 'ok');
+      setTimeout(() => location.href = '/dashboard', 12000);
+    } catch (e) { say('恢复失败：' + e.message, 'err'); btn.disabled = false; }
+  };
+</script>
+</body>
+</html>
