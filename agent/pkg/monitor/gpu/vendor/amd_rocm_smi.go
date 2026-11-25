@@ -1,0 +1,111 @@
+package vendor
+
+// Modified from https://github.com/influxdata/telegraf/blob/master/plugins/inputs/amd_rocm_smi/amd_rocm_smi.go
+// Original License: MIT
+
+import (
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"time"
+
+	"github.com/tidwall/gjson"
+)
+
+type ROCmSMI struct {
+	BinPath string
+	data    []byte
+}
+
+func (rsmi *ROCmSMI) GatherModel() ([]string, error) {
+	return rsmi.gatherModel()
+}
+
+func (rsmi *ROCmSMI) GatherUsage() ([]float64, error) {
+	return rsmi.gatherUsage()
+}
+
+func (rsmi *ROCmSMI) Start() error {
+	if _, err := os.Stat(rsmi.BinPath); os.IsNotExist(err) {
+		binPath, err := exec.LookPath("rocm-smi")
+		if err != nil {
+			return errors.New("didn't find the adequate tool to query GPU utilization")
+		}
+		rsmi.BinPath = binPath
+	}
+
+	rsmi.data = rsmi.pollROCmSMI()
+	return nil
+}
+
+func (rsmi *ROCmSMI) pollROCmSMI() []byte {
+	// 与 nvidia-smi 相同：采集发生在监控的状态锁内，工具卡住不能拖住状态上报。
+	ctx, cancel := context.WithTimeout(context.Background(), gpuToolTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, rsmi.BinPath,
+		"-u",
+		"--showproductname",
+		"--json",
+	)
+	cmd.WaitDelay = time.Second
+	gs, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil
+	}
+	return gs
+}
+
+func (rsmi *ROCmSMI) gatherModel() ([]string, error) {
+	m, err := parseModel(rsmi.data)
+	if err != nil {
+		return nil, err
+	}
+
+	return m, nil
+}
+
+func (rsmi *ROCmSMI) gatherUsage() ([]float64, error) {
+	u, err := parseUsage(rsmi.data)
+	if err != nil {
+		return nil, err
+	}
+
+	return u, nil
+}
+
+func parseModel(jsonObject []byte) ([]string, error) {
+	if jsonObject == nil {
+		return nil, nil
+	}
+
+	result := gjson.ParseBytes(jsonObject)
+	if !result.IsObject() {
+		return nil, errors.New("invalid JSON")
+	}
+
+	ret := make([]string, 0)
+	for _, value := range result.ForEach {
+		ret = append(ret, value.Get("Card series").String())
+	}
+
+	return ret, nil
+}
+
+func parseUsage(jsonObject []byte) ([]float64, error) {
+	if jsonObject == nil {
+		return nil, nil
+	}
+
+	result := gjson.ParseBytes(jsonObject)
+	if !result.IsObject() {
+		return nil, errors.New("invalid JSON")
+	}
+
+	ret := make([]float64, 0)
+	for _, value := range result.ForEach {
+		ret = append(ret, value.Get("GPU use (%)").Float())
+	}
+
+	return ret, nil
+}
