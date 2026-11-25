@@ -1,34 +1,38 @@
 #!/bin/sh
 # 只读版哪吒探针（vps-probe / nezha-ro）面板一键部署脚本
-# 默认直接拉取 GitHub Actions 预构建的多架构镜像（amd64 / arm64），秒级启动、几乎不占 CPU。
+# 默认直接从 GitHub Release 下载预编译二进制并跑在轻量 Alpine 容器中（约 5 秒完成，几乎不占 CPU）。
 #
 # 用法：
-#   安装 / 更新（root 用户可省略 sudo）：
+#   安装 / 更新（root 用户直接执行，非 root 请把 sh 改为 sudo sh）：
 #     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sh
 #   自定义端口与目录：
 #     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sh -s -- --port 5921 --dir /opt/vps-probe
+#   使用 GHCR 镜像模式（可选）：
+#     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sh -s -- --ghcr
 #   从源码本地构建（可选）：
 #     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sh -s -- --build
 #   卸载（保留 data 数据目录）：
 #     curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sh -s -- --uninstall
 set -eu
 
-IMAGE="${IMAGE:-ghcr.io/zijin-c/vps-probe:latest}"
-REPO="${REPO:-https://github.com/zijin-c/vps-probe.git}"
+REPO_SLUG="${REPO_SLUG:-zijin-c/vps-probe}"
+RELEASE_TAG="${RELEASE_TAG:-latest}"
+IMAGE="${IMAGE:-ghcr.io/${REPO_SLUG}:latest}"
+REPO="https://github.com/${REPO_SLUG}.git"
 BRANCH="${BRANCH:-main}"
 DIR="/opt/vps-probe"
 PORT="5921"
-BUILD=0
+MODE="release"
 UNINSTALL=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir) DIR="$2"; shift 2 ;;
     --port) PORT="$2"; shift 2 ;;
-    --image) IMAGE="$2"; shift 2 ;;
-    --repo) REPO="$2"; shift 2 ;;
-    --branch) BRANCH="$2"; shift 2 ;;
-    --build) BUILD=1; shift ;;
+    --tag) RELEASE_TAG="$2"; shift 2 ;;
+    --image) IMAGE="$2"; MODE="ghcr"; shift 2 ;;
+    --ghcr) MODE="ghcr"; shift ;;
+    --build) MODE="build"; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     *) echo "未知参数: $1"; exit 1 ;;
   esac
@@ -66,7 +70,65 @@ fi
 mkdir -p "$DIR/data"
 cd "$DIR"
 
-if [ "$BUILD" = 1 ]; then
+if [ "$MODE" = "release" ]; then
+  case "$(uname -m)" in
+    x86_64|amd64) ARCH="amd64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    *) echo "预编译包仅支持 amd64 / arm64，当前架构 $(uname -m) 请使用 --build 参数"; exit 1 ;;
+  esac
+  BASE_URL="https://github.com/${REPO_SLUG}/releases/download/${RELEASE_TAG}"
+  mkdir -p "$DIR/bin"
+  echo ">>> 下载预编译面板 (dashboard-linux-${ARCH})..."
+  curl -fL --retry 3 -o "$DIR/bin/app.new" "${BASE_URL}/dashboard-linux-${ARCH}"
+  chmod +x "$DIR/bin/app.new"
+  mv -f "$DIR/bin/app.new" "$DIR/bin/app"
+
+  echo ">>> 下载预编译 Agent 分发包 (agent-dist.tar.gz)..."
+  curl -fL --retry 3 -o "$DIR/agent-dist.tar.gz" "${BASE_URL}/agent-dist.tar.gz"
+  rm -rf "$DIR/agent-dist"
+  tar -xzf "$DIR/agent-dist.tar.gz" -C "$DIR"
+  rm -f "$DIR/agent-dist.tar.gz"
+
+  cat > "$DIR/docker-compose.yml" <<EOF
+services:
+  dashboard:
+    image: alpine:3.22
+    container_name: nezha-ro
+    restart: always
+    working_dir: /dashboard
+    command: ["/bin/sh", "-c", "[ -f /etc/ssl/certs/ca-certificates.crt ] || apk add --no-cache ca-certificates tzdata; exec /dashboard/app"]
+    ports:
+      - "${PORT}:8008"
+    volumes:
+      - ./bin/app:/dashboard/app:ro
+      - ./agent-dist:/dashboard/agent-dist:ro
+      - ./data:/dashboard/data
+    environment:
+      TZ: Asia/Shanghai
+      PROBE_AGENT_DIR: /dashboard/agent-dist
+EOF
+  echo ">>> 启动面板容器..."
+  compose up -d --force-recreate
+
+elif [ "$MODE" = "ghcr" ]; then
+  cat > "$DIR/docker-compose.yml" <<EOF
+services:
+  dashboard:
+    image: ${IMAGE}
+    container_name: nezha-ro
+    restart: always
+    ports:
+      - "${PORT}:8008"
+    volumes:
+      - ./data:/dashboard/data
+    environment:
+      TZ: Asia/Shanghai
+EOF
+  echo ">>> 拉取预构建镜像并启动面板 (${IMAGE})..."
+  compose pull
+  compose up -d
+
+else
   # 本地从源码构建模式
   if ! command -v git >/dev/null 2>&1; then
     echo ">>> 未检测到 git，尝试自动安装..."
@@ -108,24 +170,6 @@ services:
 EOF
   echo ">>> 从源码构建并启动面板..."
   compose up -d --build
-else
-  # 预构建镜像模式（默认，秒级启动）
-  cat > "$DIR/docker-compose.yml" <<EOF
-services:
-  dashboard:
-    image: ${IMAGE}
-    container_name: nezha-ro
-    restart: always
-    ports:
-      - "${PORT}:8008"
-    volumes:
-      - ./data:/dashboard/data
-    environment:
-      TZ: Asia/Shanghai
-EOF
-  echo ">>> 拉取预构建镜像并启动面板 (${IMAGE})..."
-  compose pull
-  compose up -d
 fi
 
 IP=$(curl -fsS --max-time 4 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "你的服务器IP")
