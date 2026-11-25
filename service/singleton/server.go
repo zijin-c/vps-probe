@@ -1,0 +1,256 @@
+package singleton
+
+import (
+	"cmp"
+	"context"
+	"log"
+	"slices"
+	"strings"
+	"sync"
+
+	"github.com/nezhahq/nezha/model"
+	"github.com/nezhahq/nezha/pkg/ddns"
+	"github.com/nezhahq/nezha/pkg/utils"
+)
+
+type ServerClass struct {
+	class[uint64, *model.Server]
+
+	// lifecycleMu serializes changes to the authoritative server entries with
+	// synchronous ServiceSentinel report processing.
+	lifecycleMu sync.RWMutex
+
+	uuidToID map[string]uint64
+
+	sortedListForGuest []*model.Server
+}
+
+func NewServerClass() *ServerClass {
+	sc := &ServerClass{
+		class: class[uint64, *model.Server]{
+			list: make(map[uint64]*model.Server),
+		},
+		uuidToID: make(map[string]uint64),
+	}
+
+	var servers []model.Server
+	DB.Find(&servers)
+	for i := range servers {
+		innerS := &servers[i]
+		model.InitServer(innerS)
+		sc.list[innerS.ID] = innerS
+		sc.uuidToID[innerS.UUID] = innerS.ID
+	}
+	sc.sortList()
+
+	model.OwnerServerIDsLookup = sc.ownerServerIDs
+	model.AllServerIDsLookup = sc.allServerIDs
+	model.OwnerIsAdminLookup = ownerIsAdmin
+
+	return sc
+}
+
+func (c *ServerClass) ownerServerIDs(ownerUID uint64) []uint64 {
+	var ids []uint64
+	c.Range(func(id uint64, s *model.Server) bool {
+		if s != nil && s.GetUserID() == ownerUID {
+			ids = append(ids, id)
+		}
+		return true
+	})
+	return ids
+}
+
+func (c *ServerClass) allServerIDs() []uint64 {
+	var ids []uint64
+	c.Range(func(id uint64, s *model.Server) bool {
+		if s != nil {
+			ids = append(ids, id)
+		}
+		return true
+	})
+	return ids
+}
+
+func ownerIsAdmin(ownerUID uint64) bool {
+	return userIsAdmin(ownerUID)
+}
+
+func (c *ServerClass) lockLifecycleRead() {
+	c.lifecycleMu.RLock()
+}
+
+func (c *ServerClass) unlockLifecycleRead() {
+	c.lifecycleMu.RUnlock()
+}
+
+func (c *ServerClass) lockLifecycleWrite() {
+	c.lifecycleMu.Lock()
+}
+
+func (c *ServerClass) unlockLifecycleWrite() {
+	c.lifecycleMu.Unlock()
+}
+
+// Update registers a new server. An edit of a registered server goes through
+// Replace.
+func (c *ServerClass) Update(s *model.Server, uuid string) {
+	c.lockLifecycleWrite()
+	defer c.unlockLifecycleWrite()
+
+	c.publish(s, uuid)
+}
+
+// Replace publishes s, an edited copy of a registered server, in place of the
+// running one and hands it the running server's runtime state. The lookup and
+// the swap share one lifecycle lock so a Delete cannot fall in between; if the
+// server is no longer registered it reports false and changes nothing, rather
+// than bring the deleted server back.
+func (c *ServerClass) Replace(s *model.Server) bool {
+	c.lockLifecycleWrite()
+	defer c.unlockLifecycleWrite()
+
+	current, ok := c.Get(s.ID)
+	if !ok || current == nil {
+		return false
+	}
+	s.CopyFromRunningServer(current)
+	c.publish(s, "")
+	return true
+}
+
+// publish must be called with the lifecycle lock held for writing.
+func (c *ServerClass) publish(s *model.Server, uuid string) {
+	c.listMu.Lock()
+
+	c.list[s.ID] = s
+	if uuid != "" {
+		c.uuidToID[uuid] = s.ID
+	}
+
+	c.listMu.Unlock()
+
+	if s.EnableDDNS {
+		if err := c.UpdateDDNS(s, nil); err != nil {
+			log.Printf("NEZHA>> Failed to update DDNS for server %d: %v", err, s.ID)
+		}
+	}
+
+	c.sortList()
+}
+
+func (c *ServerClass) Delete(idList []uint64) {
+	c.lockLifecycleWrite()
+	defer c.unlockLifecycleWrite()
+	cancelAlertDeliveriesForServers(idList)
+
+	c.listMu.Lock()
+
+	for _, id := range idList {
+		s, ok := c.list[id]
+		if !ok {
+			continue
+		}
+		// Only unmap a UUID that still belongs to this server.
+		if c.uuidToID[s.UUID] == id {
+			delete(c.uuidToID, s.UUID)
+		}
+		delete(c.list, id)
+	}
+
+	c.listMu.Unlock()
+
+	c.sortList()
+}
+
+// setUserID updates in-memory ownership under the server lifecycle lock so a
+// transfer cannot change authorization during synchronous report processing.
+func (c *ServerClass) setUserID(id, userID uint64) {
+	c.lockLifecycleWrite()
+	defer c.unlockLifecycleWrite()
+
+	if s, ok := c.Get(id); ok && s != nil {
+		s.SetUserID(userID)
+	}
+}
+
+func (c *ServerClass) GetSortedListForGuest() []*model.Server {
+	c.sortedListMu.RLock()
+	defer c.sortedListMu.RUnlock()
+
+	return slices.Clone(c.sortedListForGuest)
+}
+
+func (c *ServerClass) UUIDToID(uuid string) (id uint64, ok bool) {
+	c.listMu.RLock()
+	defer c.listMu.RUnlock()
+
+	id, ok = c.uuidToID[uuid]
+	return
+}
+
+func (c *ServerClass) UpdateDDNS(server *model.Server, ip *model.IP) error {
+	// 地址未知时不能发起更新。服务器的地址只存在内存里：面板重启后、agent 离线时
+	// 都是空的，而 DDNS 更新把“地址为空”当成“删除这条记录”。以前在这个窗口里保存
+	// 一次服务器，正常机器的 A / AAAA 记录就被删掉了。
+	if ip == nil && server.GeoIP != nil {
+		ip = &server.GeoIP.IP
+	}
+	if ip == nil || (ip.IPv4Addr == "" && ip.IPv6Addr == "") {
+		return nil
+	}
+	confServers := strings.Split(Conf.DNSServers, ",")
+	ctx := context.WithValue(context.Background(), ddns.DNSServerKey{}, utils.IfOr(confServers[0] != "", confServers, utils.DNSServers))
+
+	providers, err := DDNSShared.GetDDNSProvidersFromProfiles(server.DDNSProfiles, ip, server.GetUserID())
+	if err != nil {
+		return err
+	}
+
+	for _, provider := range providers {
+		domains := server.OverrideDDNSDomains[provider.GetProfileID()]
+		// The checks above hold for this instant only; the worker outlives the
+		// call, so it repeats them against current state as it goes.
+		provider.Revoked = func() bool { return !c.ddnsUpdateInForce(server, provider.DDNSProfile) }
+		go func(provider *ddns.Provider) {
+			provider.UpdateDomain(ctx, domains...)
+		}(provider)
+	}
+
+	return nil
+}
+
+// ddnsUpdateInForce reports whether an update started for server with profile
+// may still proceed: both are still the registered objects (neither deleted
+// nor replaced by an edit; a server edit starts its own update) and the
+// profile still belongs to the server's current owner.
+func (c *ServerClass) ddnsUpdateInForce(server *model.Server, profile *model.DDNSProfile) bool {
+	if current, ok := c.Get(server.ID); !ok || current != server {
+		return false
+	}
+	current, ok := DDNSShared.Get(profile.ID)
+	return ok && current == profile && profile.GetUserID() == server.GetUserID()
+}
+
+func (c *ServerClass) sortList() {
+	c.listMu.RLock()
+	defer c.listMu.RUnlock()
+	c.sortedListMu.Lock()
+	defer c.sortedListMu.Unlock()
+
+	c.sortedList = utils.MapValuesToSlice(c.list)
+	// 按照服务器 ID 排序的具体实现（ID越大越靠前）
+	slices.SortStableFunc(c.sortedList, func(a, b *model.Server) int {
+		if a.DisplayIndex == b.DisplayIndex {
+			return cmp.Compare(a.ID, b.ID)
+		}
+		return cmp.Compare(b.DisplayIndex, a.DisplayIndex)
+	})
+
+	c.sortedListForGuest = make([]*model.Server, 0, len(c.sortedList))
+	for _, s := range c.sortedList {
+		if !s.HideForGuest {
+			c.sortedListForGuest = append(c.sortedListForGuest, s)
+		}
+	}
+}

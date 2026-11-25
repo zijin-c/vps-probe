@@ -1,0 +1,26 @@
+package model
+
+import (
+	"time"
+
+	"gorm.io/gorm"
+)
+
+type ServiceHistory struct {
+	ID        uint64    `gorm:"primaryKey" json:"id,omitempty"`
+	CreatedAt time.Time `gorm:"index;<-:create;index:idx_server_id_created_at_service_id_avg_delay" json:"created_at,omitempty"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at,omitempty"`
+	ServiceID uint64    `gorm:"index:idx_server_id_created_at_service_id_avg_delay" json:"service_id,omitempty"`
+	ServerID  uint64    `gorm:"index:idx_server_id_created_at_service_id_avg_delay" json:"server_id,omitempty"`
+	AvgDelay  float64   `gorm:"index:idx_server_id_created_at_service_id_avg_delay" json:"avg_delay,omitempty"` // 平均延迟，毫秒
+	Up        uint64    `json:"up,omitempty"`                                                                   // 检查状态良好计数
+	Down      uint64    `json:"down,omitempty"`                                                                 // 检查状态异常计数
+	Data      string    `json:"data,omitempty"`
+}
+
+// AfterFind replaces a non-finite delay stored by a release that predates
+// FiniteStateValue; one such row fails every JSON response built from it.
+func (h *ServiceHistory) AfterFind(tx *gorm.DB) error {
+	h.AvgDelay = FiniteStateValue(h.AvgDelay)
+	return nil
+}
