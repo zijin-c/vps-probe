@@ -36,6 +36,7 @@ import (
 	"github.com/nezhahq/agent/pkg/fsnotifyx"
 	"github.com/nezhahq/agent/pkg/logger"
 	"github.com/nezhahq/agent/pkg/monitor"
+	"github.com/nezhahq/agent/pkg/quality"
 	"github.com/nezhahq/agent/pkg/processgroup"
 	"github.com/nezhahq/agent/pkg/util"
 	utlsx "github.com/nezhahq/agent/pkg/utls"
@@ -232,6 +233,15 @@ func main() {
 func run() {
 	// 只读分支：已移除自动更新。上游会从 GitHub 拉取官方 Agent 覆盖本二进制，
 	// 那样会悄悄恢复远程命令/终端/文件管理能力。升级请手动替换二进制。
+
+	// 只读分支：内置 IP / 线路质量检测（固定的出站查询，面板无法指定目标或命令）
+	quality.Start(func() quality.Options {
+		c := loadRuntimeConfig()
+		return quality.Options{
+			Server: c.Server, TLS: c.TLS, InsecureTLS: c.InsecureTLS,
+			UUID: c.UUID, Secret: c.ClientSecret, Version: version, Disabled: c.DisableQualityCheck,
+		}
+	})
 
 	var err error
 	var dashboardBootTimeReceipt *pb.Uint64Receipt

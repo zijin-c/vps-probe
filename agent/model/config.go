@@ -47,6 +47,7 @@ type AgentConfig struct {
 	IPReportPeriod              uint32          `koanf:"ip_report_period" json:"ip_report_period"`               // IP上报周期
 	SelfUpdatePeriod            uint32          `koanf:"self_update_period" json:"self_update_period"`           // 自动更新周期
 	CustomIPApi                 []string        `koanf:"custom_ip_api" json:"custom_ip_api,omitempty"`           // 自定义 IP API                      // 重载间隔
+	DisableQualityCheck         bool            `koanf:"disable_quality_check" json:"disable_quality_check"`     // 只读分支：关闭 IP/线路质量检测
 
 	k        *koanf.Koanf `json:"-"`
 	filePath string       `json:"-"`
