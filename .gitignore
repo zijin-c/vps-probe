@@ -1,2 +1,5 @@
 dist/
 data/
+local-test/
+node_modules/
+*.tsbuildinfo
