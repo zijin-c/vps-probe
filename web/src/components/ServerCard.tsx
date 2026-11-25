@@ -118,10 +118,14 @@ export default function ServerCard({ s, traffic, latency, brief }: { s: LiveServ
       </div>
 
       <div className="netline">
-        <span className="ar up"><i><IUp /></i>{fmtSpeed(st.net_out_speed)}</span>
-        <span className="ar down"><i><IDown /></i>{fmtSpeed(st.net_in_speed)}</span>
-        <span className="tot">出 {fmtBytes(st.net_out_transfer)}</span>
-        <span className="tot">入 {fmtBytes(st.net_in_transfer)}</span>
+        <div className="netpill">
+          <span className="ar up"><i><IUp /></i>{fmtSpeed(st.net_out_speed)}</span>
+          <span className="tot">出 {fmtBytes(st.net_out_transfer)}</span>
+        </div>
+        <div className="netpill">
+          <span className="ar down"><i><IDown /></i>{fmtSpeed(st.net_in_speed)}</span>
+          <span className="tot">入 {fmtBytes(st.net_in_transfer)}</span>
+        </div>
       </div>
 
       {lines.length > 0 && (
