@@ -6,8 +6,8 @@
 
 ```
 vps-probe/
-├── dashboard/        面板源码（上游 fork，git remote 仍指向上游，便于合并更新）
-├── agent/            Agent 源码（上游 fork）
+├── dashboard/        面板源码（git subtree 引入 nezhahq/nezha）
+├── agent/            Agent 源码（git subtree 引入 nezhahq/agent）
 ├── deploy/install.sh Agent 一键安装脚本（从你自己的面板下载 Agent）
 ├── Dockerfile        一次构建面板 + 4 种架构的 Agent
 ├── docker-compose.yml
@@ -112,11 +112,15 @@ Agent 装在 `/opt/nezha-ro/`，systemd 服务名 `nezha-ro-agent`，常驻内�
 
 ## 更新上游
 
+整个项目是一个仓库，两个上游以 `git subtree`（squash）方式引入，在仓库根目录执行：
+
 ```bash
-cd dashboard && git fetch origin && git merge origin/master   # agent 同理
+git subtree pull --prefix=dashboard https://github.com/nezhahq/nezha.git master --squash
+git subtree pull --prefix=agent     https://github.com/nezhahq/agent.git main   --squash
 ```
 
-改动集中在少数文件，冲突一般很小：
+合并后务必检查 Agent 的 `task_dispatch.go` 白名单仍然生效（新增的任务类型默认会被拒绝，这是安全的），
+以及 `main.go` 里没有重新出现自动更新。改动集中在少数文件，冲突一般很小：
 - Agent：`cmd/agent/task_dispatch.go`、`cmd/agent/main.go`（`run()` 开头）
 - 面板：`cmd/dashboard/controller/controller.go`（路由）、`cmd/dashboard/main.go`、`service/singleton/sqlite_dialector_default.go`，
   新增 `controller/readonly.go`、`controller/probe*.go`、`cmd/dashboard/probe_cli.go`、`service/probe/`
