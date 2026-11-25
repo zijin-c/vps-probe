@@ -91,7 +91,7 @@ func WriteBackup(w io.Writer, includeHistory bool) error {
 	if err := tarFile(tw, "config.yaml", paths.Config); err != nil {
 		return err
 	}
-	for _, name := range []string{"probe.yaml", "probe-state.json"} {
+	for _, name := range []string{"probe.yaml", "probe-state.json", "probe-quality.json"} {
 		p := filepath.Join(dataDir, name)
 		if _, err := os.Stat(p); err == nil {
 			if err := tarFile(tw, name, p); err != nil {
@@ -314,6 +314,7 @@ func ApplyRestore(archive string, p Paths, dir string) error {
 		{filepath.Join(stage, "config.yaml"), p.Config},
 		{filepath.Join(stage, "probe.yaml"), filepath.Join(dir, "probe.yaml")},
 		{filepath.Join(stage, "probe-state.json"), filepath.Join(dir, "probe-state.json")},
+		{filepath.Join(stage, "probe-quality.json"), filepath.Join(dir, "probe-quality.json")},
 	}
 	if m.History && m.TSDBPath != "" {
 		moves = append(moves, struct{ from, to string }{filepath.Join(stage, "tsdb"), m.TSDBPath})

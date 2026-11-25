@@ -34,9 +34,19 @@ type BackupConf struct {
 	IncludeHistory bool `yaml:"include_history"`
 }
 
+// QualityConf 控制 Agent 内置的 IP / 线路质量检测。密钥都是可选的，
+// 会随检测计划下发给 Agent，用于查询需要授权的 IP 数据库。
+type QualityConf struct {
+	IntervalHours  int    `yaml:"interval_hours"`
+	IPInfoToken    string `yaml:"ipinfo_token"`
+	AbuseIPDBKey   string `yaml:"abuseipdb_key"`
+	IP2LocationKey string `yaml:"ip2location_key"`
+}
+
 type Config struct {
 	Telegram TelegramConf `yaml:"telegram"`
 	Backup   BackupConf   `yaml:"backup"`
+	Quality  QualityConf  `yaml:"quality"`
 }
 
 func defaultConfig() Config {
@@ -56,6 +66,7 @@ func defaultConfig() Config {
 			SendToTelegram: false,
 			IncludeHistory: false,
 		},
+		Quality: QualityConf{IntervalHours: 24},
 	}
 }
 
@@ -77,6 +88,12 @@ backup:
   keep: 7                  # 保留份数
   send_to_telegram: false  # 同时把备份文件发给 Telegram（文件里含密钥，注意私聊）
   include_history: false   # 是否包含 TSDB 监控历史（体积较大）
+
+quality:                   # Agent 内置的 IP 质量 / 流媒体解锁 / 三网回程检测
+  interval_hours: 24       # 自动重测间隔
+  ipinfo_token: ""         # 可选：ipinfo.io token，额外提供使用类型与隐私标记
+  abuseipdb_key: ""        # 可选：AbuseIPDB 免费密钥，提供滥用评分
+  ip2location_key: ""      # 可选：IP2Location.io 密钥，提供欺诈评分
 `
 
 var (

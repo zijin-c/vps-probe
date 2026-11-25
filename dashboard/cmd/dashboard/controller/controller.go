@@ -121,7 +121,7 @@ func routers(r *gin.Engine, frontendDist fs.FS) {
 	// PAT bearer requests bypass — so the only callers gated are
 	// cookie-JWT POST/PATCH/PUT/DELETE, which is exactly the H6 surface.
 	auth := api.Group("", authMw, csrfMiddleware())
-	registerProbeRoutes(r, authMw) // 只读分支：备份/恢复
+	registerProbeRoutes(r, authMw, optionalAuthMw) // 只读分支：备份/恢复、IP 与线路质量
 
 	// 「自我管理」类端点 — 显式禁止 PAT 访问（避免 PAT 自我提权链）。
 	patForbidden := restPATForbiddenMiddleware()
@@ -490,6 +490,8 @@ func fallbackToFrontend(frontendDist fs.FS) func(*gin.Context) {
 		// 浏览器内 SPA 看起来正常，但 monitoring / 链接预览会以为站点挂了）。
 		// 新增前端路由时必须在 admin-frontend/src/main.tsx 与这里同步加。
 		regexp.MustCompile(`^/dashboard/transfer$`),
+		// 只读分支自研后台（web/src/admin）的路由
+		regexp.MustCompile(`^/dashboard/(servers|groups|monitors|alerts|notifications|backup|account)$`),
 	}
 
 	getFallbackStatusCode := func(path string) int {
