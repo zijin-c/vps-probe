@@ -230,26 +230,8 @@ func main() {
 }
 
 func run() {
-	startupConfig := startupConfigViewFrom(loadRuntimeConfig())
-	// 定时检查更新
-	if _, err := semver.Parse(version); err == nil && !startupConfig.disableAutoUpdate {
-		if doSelfUpdate(updateConfigTupleFrom(loadRuntimeConfig()), true) {
-			os.Exit(1)
-		}
-		go func() {
-			var interval time.Duration
-			if startupConfig.selfUpdatePeriod > 0 {
-				interval = time.Duration(startupConfig.selfUpdatePeriod) * time.Minute
-			} else {
-				interval = time.Duration(rand.Intn(maxUpdateInterval-minUpdateInterval)+minUpdateInterval) * time.Minute
-			}
-			for range time.Tick(interval) {
-				if doSelfUpdate(updateConfigTupleFrom(loadRuntimeConfig()), true) {
-					os.Exit(1)
-				}
-			}
-		}()
-	}
+	// 只读分支：已移除自动更新。上游会从 GitHub 拉取官方 Agent 覆盖本二进制，
+	// 那样会悄悄恢复远程命令/终端/文件管理能力。升级请手动替换二进制。
 
 	var err error
 	var dashboardBootTimeReceipt *pb.Uint64Receipt

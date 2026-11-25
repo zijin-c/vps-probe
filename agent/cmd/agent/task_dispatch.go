@@ -44,23 +44,21 @@ type agentTaskExecution struct {
 	onTaskExit func()
 }
 
+// isReadOnlyTask 列出本分支 Agent 唯一会执行的任务类型（只读探测）。
+// 远程命令、终端、文件管理、NAT、远程升级、远程改配置/读配置、服务器迁移、
+// MCP exec/fs 等能力在这里被硬性拒绝，面板无论下发什么都不会执行；
+// 这些 handler 不再被引用，链接器也会把它们从二进制中剔除。
+func isReadOnlyTask(taskType uint64) bool {
+	switch taskType {
+	case model.TaskTypeHTTPGet, model.TaskTypeICMPPing, model.TaskTypeTCPPing, model.TaskTypeKeepalive:
+		return true
+	}
+	return false
+}
+
 func (e agentTaskExecution) dispatch(task *pb.Task) {
-	switch task.GetType() {
-	case model.TaskTypeApplyConfig, model.TaskTypeServerTransferApply:
-		// Apply handlers capture their sole snapshot after acquiring reloadMu.
-		// Loading here would either duplicate the snapshot or use a stale baseline
-		// after waiting behind applyPendingReload.
-		e.runAgentTask(e.parent, nil, task)
-		return
-	case model.TaskTypeTerminalGRPC, model.TaskTypeNAT, model.TaskTypeFM, model.TaskTypeFsTransfer:
-		config := loadRuntimeConfig()
-		if e.session != nil {
-			e.session.startLongLivedStreamTask(func(taskContext context.Context) {
-				e.runAgentTask(taskContext, config, task)
-			})
-			return
-		}
-		go e.runAgentTask(e.parent, config, task)
+	if !isReadOnlyTask(task.GetType()) {
+		printf("只读模式，拒绝任务类型: %d", task.GetType())
 		return
 	}
 	config := loadRuntimeConfig()
@@ -107,15 +105,12 @@ func doTaskWithSnapshot(
 	config *model.AgentConfig,
 	task *pb.Task,
 ) *pb.TaskResult {
+	_ = parent
+	if !isReadOnlyTask(task.GetType()) {
+		printf("只读模式，拒绝任务类型: %d", task.GetType())
+		return nil
+	}
 	result := &pb.TaskResult{Id: task.GetId(), Type: task.GetType()}
-	if task.GetType() == model.TaskTypeApplyConfig {
-		handleApplyConfigTask(task, result)
-		return result
-	}
-	if task.GetType() == model.TaskTypeServerTransferApply {
-		handleServerTransferApplyTask(task, result)
-		return result
-	}
 	gates := taskFeatureGatesFrom(config)
 	switch task.GetType() {
 	case model.TaskTypeHTTPGet:
@@ -124,38 +119,7 @@ func doTaskWithSnapshot(
 		handleIcmpPingTaskWithConfig(gates, task, result)
 	case model.TaskTypeTCPPing:
 		handleTcpPingTaskWithConfig(gates, task, result)
-	case model.TaskTypeCommand:
-		handleCommandTaskWithConfig(gates, task, result)
-	case model.TaskTypeUpgrade:
-		handleUpgradeTaskWithConfig(updateConfigTupleFrom(config), gates)
-	case model.TaskTypeTerminalGRPC:
-		handleTerminalTaskWithConfig(parent, gates, task)
-		return nil
-	case model.TaskTypeNAT:
-		handleNATTaskWithConfig(parent, gates, task)
-		return nil
-	case model.TaskTypeFM:
-		handleFMTaskWithConfig(parent, gates, task)
-		return nil
-	case model.TaskTypeReportConfig:
-		handleReportConfigTaskWithConfig(config, result)
-	case model.TaskTypeExec:
-		handleExecTaskWithConfig(gates, task, result)
-	case model.TaskTypeFsList:
-		handleFsListTaskWithConfig(gates, task, result)
-	case model.TaskTypeFsRead:
-		handleFsReadTaskWithConfig(gates, task, result)
-	case model.TaskTypeFsWrite:
-		handleFsWriteTaskWithConfig(gates, task, result)
-	case model.TaskTypeFsDelete:
-		handleFsDeleteTaskWithConfig(gates, task, result)
-	case model.TaskTypeFsTransfer:
-		handleFsTransferTaskWithConfig(parent, gates, task)
-		return nil
 	case model.TaskTypeKeepalive:
-	default:
-		printf("不支持的任务: %v", task)
-		return nil
 	}
 	return result
 }
