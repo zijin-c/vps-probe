@@ -1,7 +1,14 @@
-# 只读探针：面板 + 各架构 Agent 一次构建
+# 只读探针：自研前端 + 面板 + 各架构 Agent 一次构建
 # 构建：docker build -t nezha-ro .
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web ./
+RUN npm run build
+
 FROM golang:1.26-alpine AS build
-RUN apk add --no-cache bash curl unzip yq git
+RUN apk add --no-cache git
 WORKDIR /src
 ARG VERSION=1.0.0-ro
 ENV CGO_ENABLED=0 GOFLAGS=-trimpath
@@ -16,8 +23,9 @@ COPY dashboard ./dashboard
 COPY agent ./agent
 COPY deploy ./deploy
 
-# 官方预编译前端（用户前台 + 管理后台），版本见 dashboard/service/singleton/frontend-templates.yaml
-RUN cd dashboard && rm -rf cmd/dashboard/*-dist && bash script/fetch-frontends.sh
+# 自研前端（web/）同时作为前台与后台：同一份产物放进 user-dist 与 admin-dist
+COPY --from=web /web/dist ./web-dist
+RUN cd dashboard/cmd/dashboard && rm -rf user-dist admin-dist && cp -r /src/web-dist user-dist && cp -r /src/web-dist admin-dist
 RUN cd dashboard && swag init --pd -d cmd/dashboard -g main.go -o cmd/dashboard/docs
 RUN cd dashboard && go build -ldflags "-s -w -X github.com/nezhahq/nezha/service/singleton.Version=${VERSION}" -o /out/app ./cmd/dashboard
 

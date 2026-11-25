@@ -1,11 +1,12 @@
 # 只读版哪吒探针（nezha-ro）
 
 基于 [nezhahq/nezha](https://github.com/nezhahq/nezha)（面板）与 [nezhahq/agent](https://github.com/nezhahq/agent) 二次修改：
-**保留**监控、三网延迟、流量周期、账单展示、官方前端主题；**去掉**一切远程控制能力；
-**新增** Telegram 交互机器人与一键备份/恢复。
+**保留**监控、三网延迟、流量周期、账单展示；**去掉**一切远程控制能力；
+**新增**自研前台与后台界面（`web/`）、Telegram 交互机器人与一键备份/恢复。
 
 ```
 vps-probe/
+├── web/              自研前端（React + Vite），同时作为前台与 /dashboard 后台
 ├── dashboard/        面板源码（git subtree 引入 nezhahq/nezha）
 ├── agent/            Agent 源码（git subtree 引入 nezhahq/agent）
 ├── deploy/install.sh Agent 一键安装脚本（从你自己的面板下载 Agent）
@@ -52,6 +53,31 @@ Agent 只会执行 4 种任务：HTTP GET、ICMP Ping、TCP Ping（三网延迟/
 - **重新部署后导入，Agent 不用重装就会自动连回来**（密钥与 UUID 都在备份里）
 - 恢复前的旧数据会自动另存到 `data/backups/pre-restore-时间/`
 
+### 5. 新增：IP 质量 / 流媒体解锁 / 三网回程（Agent 内置，`pkg/quality`）
+新装的 Agent 会自动做第一次检测，之后每 24 小时（`probe.yaml` 的 `quality.interval_hours`）重测一次。
+也可以手动触发：登录后在服务器详情页每个分区右上角点「开始检测 / 重新检测」，或用「一键检测全部」；
+Agent 每分钟询问一次，1 分钟内开始，页面会显示"排队中 / 检测中"并在完成后自动刷新。
+三项（三网回程 / 流媒体解锁 / IP 质量）可以单独重测。
+
+检测结果会**自动**显示在首页卡片上：每家运营商取各城市中最常见的回程线路（如"电信 CN2 GIA · 联通 9929 · 移动 CMIN2"，精品线路金色），
+外加原生 IP 与已解锁的流媒体。没有检测结果时才使用公开备注里手填的线路。
+检测都是**固定的出站查询**，面板只能说"再跑某一项"，不能指定目标或命令。
+
+| 项目 | 做法 |
+| --- | --- |
+| IP 质量 | 本机出口 IPv4 / IPv6 分别查询 ipapi.is、ip-api.com、ipinfo（免密钥）；可选 AbuseIPDB、IP2Location 密钥（填在 `data/probe.yaml` 的 `quality`） |
+| 原生 / 广播 IP | RDAP（RIR 注册国家）与地理位置国家一致为原生，否则为广播 |
+| 流媒体 / AI | Netflix、YouTube Premium、Disney+、Prime Video、TikTok、ChatGPT、Reddit；随机子域泛解析 / 内网解析视为 DNS 解锁 |
+| 三网回程 | 纯 Go 原始 ICMP traceroute 到北京/上海/广州三网，按途经骨干网前缀判断 CN2 GIA / GT / 163 / 9929 / 4837 / CUG / CMIN2 / CMI / CTGNet，每个目标测 3 次合并 |
+
+参考：判定思路来自 [xykt/IPQuality](https://github.com/xykt/IPQuality)、[oneclickvirt/backtrace](https://github.com/oneclickvirt/backtrace)（Apache-2.0）、
+[zhanghanyun/backtrace](https://github.com/zhanghanyun/backtrace)（MIT），代码为独立实现，未使用 IPQuality 作者的代理 API。
+
+- 回程检测需要 root（原始 ICMP 套接字）；安装脚本装的 systemd 服务默认就是 root。
+- 只测**回程**：去程（国内 → VPS）必须从国内节点发起探测，VPS 上无法测，开源脚本也没有可靠方案。
+- 不做测速：会消耗大量流量配额。
+- 不想检测可在 Agent 配置里加 `disable_quality_check: true`。
+
 ## 部署
 
 ### 面板（Docker）
@@ -89,7 +115,8 @@ Agent 装在 `/opt/nezha-ro/`，systemd 服务名 `nezha-ro-agent`，常驻内�
 
 ### 账单 / 剩余天数 / 剩余价值
 
-在后台编辑服务器的 **公开备注**，填入官方前端同款 JSON，首页卡片和机器人都会读取：
+在后台「服务器 → 编辑」里直接填表即可（价格、周期、到期日、自动续费、带宽、流量、线路标签）。
+底层存的是服务器 **公开备注** 里的 JSON（与官方前端格式兼容），也可以勾选"直接编辑 JSON"手写：
 
 ```json
 {"billingDataMod":{"startDate":"2025-11-29T00:00:00+08:00","endDate":"2026-11-29T00:00:00+08:00","autoRenewal":"1","cycle":"年","amount":"$10"},
@@ -126,6 +153,7 @@ git subtree pull --prefix=agent     https://github.com/nezhahq/agent.git main   
   新增 `controller/readonly.go`、`controller/probe*.go`、`cmd/dashboard/probe_cli.go`、`service/probe/`
 
 ## 已知限制
-- 管理后台（官方前端）里终端、文件管理、计划任务、NAT 的按钮还在，点了会提示"只读分支已禁用"。
-- 线路识别、IP 质量、流媒体解锁、单线程测速等信息不会自动检测，可以手动写进公开备注的 `networkRoute` / `extra`。
+- 自研后台只做了只读探针需要的页面；DDNS、多用户、API Token、WAF 等上游功能没有界面（接口仍在）。
+- 去程线路、单线程测速不检测（原因见上）；三网回程目前只测 IPv4。
+- 流媒体解锁依赖各站点当前的页面结构，站点改版后个别项目可能显示"检测失败"，需要跟进调整。
 - 面板上的 4 个上游告警规则单测在 Windows 下本就失败（上游代码同样如此），与本分支改动无关。
