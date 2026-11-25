@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ICopy, IEdit, IExternal, IEye, IEyeOff, IPlus, IRefresh, ISearch, ITrash } from '../components/icons'
 import { Dropdown, Field, Modal, Seg, copyText, useToast } from '../components/ui'
 import { expiryText } from '../components/ServerCard'
-import { api, isOnline, subscribeServers, type ServerGroup, type ServerRow } from '../lib/api'
+import { api, isOnline, subscribeServers, type AlertRule, type ServerGroup, type ServerRow } from '../lib/api'
 import { parseBilling, parseNote, priceText, type BillingData, type PlanData } from '../lib/billing'
 import { clsx, fmtAgo, toneVar } from '../lib/format'
 import { PageHead, fromDateInput, toDateInput, useAction, useAdmin, useConfirm, useConfirmDelete, useList } from './common'
@@ -459,6 +459,38 @@ function addMonthsToDate(baseDate: string, months: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
+/** 根据「每月几号重置」计算最近一个已开始周期的起始日期（本地 00:00 RFC3339） */
+function cycleStartFromResetDay(day: number): string {
+  const now = new Date()
+  let y = now.getFullYear()
+  let m = now.getMonth()
+  const maxDayInCur = new Date(y, m + 1, 0).getDate()
+  if (now.getDate() < Math.min(day, maxDayInCur)) {
+    m -= 1
+    if (m < 0) { m = 11; y -= 1 }
+  }
+  const clamped = Math.min(day, new Date(y, m + 1, 0).getDate())
+  const p = (n: number) => String(n).padStart(2, '0')
+  return fromDateInput(`${y}-${p(m + 1)}-${p(clamped)}`)
+}
+
+function trafficBytes(numStr: string, unit: string): number {
+  const n = Number(numStr)
+  if (!Number.isFinite(n) || n <= 0) return 0
+  if (unit === 'TB') return Math.round(n * 1024 ** 4)
+  if (unit === 'GB') return Math.round(n * 1024 ** 3)
+  return 0
+}
+
+function findServerCycleRule(rules: AlertRule[], serverId: number): AlertRule | undefined {
+  return rules.find((a) => {
+    const r = a.rules?.[0]
+    if (!r || !r.type?.endsWith('_cycle') || r.cover !== 1) return false
+    const keys = Object.keys(r.ignore || {}).filter((k) => r.ignore?.[k])
+    return keys.length === 1 && Number(keys[0]) === serverId
+  })
+}
+
 function EditServer({ s, onClose, onSaved }: { s: ServerRow; onClose: () => void; onSaved: () => void }) {
   const note = useMemo(() => parseNote(s.public_note), [s.public_note])
   const rawIsJson = !s.public_note || s.public_note.trim().startsWith('{')
@@ -485,6 +517,26 @@ function EditServer({ s, onClose, onSaved }: { s: ServerRow; onClose: () => void
   const initTr = splitUnit(plan.trafficVol, TR_UNITS, 'TB')
   const [trNum, setTrNum] = useState(initTr.num)
   const [trUnit, setTrUnit] = useState(initTr.unit)
+
+  // 流量重置日（0 表示不启用周期统计，1~31 表示每月几号重置），与该服务器的周期流量告警规则自动同步
+  const [resetDay, setResetDay] = useState<number>(0)
+  const [cycleRule, setCycleRule] = useState<AlertRule | null>(null)
+
+  useEffect(() => {
+    api<AlertRule[]>('/alert-rule')
+      .then((list) => {
+        const hit = findServerCycleRule(list || [], s.id)
+        if (hit) {
+          setCycleRule(hit)
+          const cs = hit.rules[0]?.cycle_start
+          if (cs && hit.enable) {
+            const d = new Date(cs)
+            if (!isNaN(d.getTime())) setResetDay(d.getDate())
+          }
+        }
+      })
+      .catch(() => {})
+  }, [s.id])
 
   const syncPrice = (cur: string, num: string) => {
     setPriceCur(cur)
@@ -524,13 +576,43 @@ function EditServer({ s, onClose, onSaved }: { s: ServerRow; onClose: () => void
         return
       }
     }
-    const ok = await run(() => api(`/server/${s.id}`, {
-      method: 'PATCH',
-      body: {
-        name, note: privNote, public_note, display_index: Number(displayIndex) || 0, hide_for_guest: hide,
-        enable_ddns: !!s.enable_ddns, ddns_profiles: s.ddns_profiles || [], override_ddns_domains: s.override_ddns_domains || {},
-      },
-    }), '已保存')
+    const ok = await run(async () => {
+      await api(`/server/${s.id}`, {
+        method: 'PATCH',
+        body: {
+          name, note: privNote, public_note, display_index: Number(displayIndex) || 0, hide_for_guest: hide,
+          enable_ddns: !!s.enable_ddns, ddns_profiles: s.ddns_profiles || [], override_ddns_domains: s.override_ddns_domains || {},
+        },
+      })
+      // 自动同步该服务器的周期流量规则
+      if (!advanced) {
+        const maxBytes = trafficBytes(trNum, trUnit)
+        if (resetDay > 0 && maxBytes > 0 && trUnit !== '不限') {
+          const ruleType = plan.trafficType === '1' ? 'transfer_out_cycle' : 'transfer_all_cycle'
+          const ruleBody = {
+            name: `周期流量 · ${name}`,
+            enable: true,
+            trigger_mode: cycleRule?.trigger_mode || 1,
+            notification_group_id: cycleRule?.notification_group_id || 0,
+            fail_trigger_tasks: cycleRule?.fail_trigger_tasks || [],
+            recover_trigger_tasks: cycleRule?.recover_trigger_tasks || [],
+            rules: [{
+              type: ruleType,
+              max: maxBytes,
+              cycle_start: cycleStartFromResetDay(resetDay),
+              cycle_interval: 1,
+              cycle_unit: 'month',
+              cover: 1,
+              ignore: { [s.id]: true },
+            }],
+          }
+          if (cycleRule) await api(`/alert-rule/${cycleRule.id}`, { method: 'PATCH', body: ruleBody })
+          else await api('/alert-rule', { method: 'POST', body: ruleBody })
+        } else if (cycleRule && resetDay === 0) {
+          await api('/batch-delete/alert-rule', { method: 'POST', body: [cycleRule.id] })
+        }
+      }
+    }, '已保存')
     if (ok) onSaved()
   }
 
@@ -625,10 +707,18 @@ function EditServer({ s, onClose, onSaved }: { s: ServerRow; onClose: () => void
             <Field label="流量计费">
               <select className="select" value={plan.trafficType || '2'} onChange={(e) => setPlan({ ...plan, trafficType: e.target.value })}>
                 <option value="2">双向计费</option>
-                <option value="1">单向计费</option>
+                <option value="1">单向计费（出站）</option>
               </select>
             </Field>
-            <div className="fld">
+            <Field label="流量重置日" hint="设置后前台按该重置日统计当月周期流量，不再统计开机累计">
+              <select className="select" value={resetDay} onChange={(e) => setResetDay(Number(e.target.value))} disabled={trUnit === '不限'}>
+                <option value={0}>不启用（显示开机累计）</option>
+                {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
+                  <option key={d} value={d}>每月 {d} 日重置</option>
+                ))}
+              </select>
+            </Field>
+            <div className="fld full">
               <span>IP</span>
               <div style={{ display: 'flex', gap: 16, height: 36, alignItems: 'center' }}>
                 <label className="check"><input type="checkbox" checked={plan.IPv4 === '1'} onChange={(e) => setPlan({ ...plan, IPv4: e.target.checked ? '1' : '0' })} />IPv4</label>
