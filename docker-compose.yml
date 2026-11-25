@@ -1,7 +1,6 @@
 services:
   dashboard:
-    build: .
-    image: nezha-ro:latest
+    image: ghcr.io/zijin-c/vps-probe:latest
     container_name: nezha-ro
     # 必须是 always：网页"上传恢复"后面板会自行退出，靠它重新拉起并应用备份
     restart: always
@@ -11,6 +10,6 @@ services:
       - ./data:/dashboard/data
     environment:
       TZ: Asia/Shanghai
-      # 也可以直接写在 data/probe.yaml 里
+      # 也可以直接写在 data/probe.yaml 里或后台「探针配置」页面修改
       # PROBE_TG_TOKEN: "123456:ABC..."
       # PROBE_TG_CHAT_IDS: "123456789"

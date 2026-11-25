@@ -22,27 +22,28 @@ vps-probe/
 
 ### 1. 面板一键部署（推荐）
 
-自动检查/安装 Docker 与 Git，拉取代码并构建启动容器（默认目录 `/opt/vps-probe`，端口 `5921`）：
+默认直接拉取 GitHub Actions 预构建的多架构镜像（`ghcr.io/zijin-c/vps-probe:latest`，支持 `amd64 / arm64`），无需现场编译，秒级启动、几乎不占 CPU（默认目录 `/opt/vps-probe`，端口 `5921`）：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh
+# root 用户直接执行（非 root 用户请把 sh 改为 sudo sh）
+curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sh
 ```
 
 常用参数：
 
 ```bash
 # 自定义端口与安装目录
-curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh -s -- --port 5921 --dir /opt/vps-probe
+curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sh -s -- --port 5921 --dir /opt/vps-probe
 
 # 卸载容器（保留 data 数据目录）
-curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sudo sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/zijin-c/vps-probe/main/deploy/panel.sh | sh -s -- --uninstall
 ```
 
 或者手动 Docker Compose 部署：
 
 ```bash
 git clone https://github.com/zijin-c/vps-probe.git && cd vps-probe
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
 
 部署完成后打开 `http://你的IP:5921/dashboard`，默认账号 **`admin / admin`**，请登录后立刻在「账户」里修改用户名与密码。
