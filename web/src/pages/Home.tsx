@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ServerCard, { RouteTags, expiryText } from '../components/ServerCard'
 import Topbar from '../components/Topbar'
-import { ICalendar, IGrid, IList, IPulse, ISearch, IServer, ITraffic } from '../components/icons'
+import { EmptyArt, Radar } from '../components/art'
+import { ICalendar, IDown, IGrid, IList, ISearch, ITraffic, IUp } from '../components/icons'
 import { Meter, Seg, Dropdown } from '../components/ui'
 import { api, type QualityBrief, type ServerGroup } from '../lib/api'
 import { priceText } from '../lib/billing'
@@ -124,28 +125,46 @@ export default function Home() {
         </span>
       } />
       <main className="page">
-        <section className="summary">
-          <div className={clsx('sum glass clickable c-ok', (filter === 'online' || filter === 'offline') && 'active', filter === 'offline' && 'bad-ring')}
-            role="button" tabIndex={0} title={offline ? '点击切换：在线 / 离线 / 全部' : '点击只看在线'}
-            onClick={() => setFilter(filter === 'all' ? (offline ? 'offline' : 'online') : filter === 'offline' ? 'online' : 'all')}>
-            <div className="sum-h"><div className="label">在线服务器</div><span className="sum-ico ok"><IServer /></span></div>
-            <div className="big">{online.length}<small>/ {servers.length}</small></div>
-            <div className="sub">{offline ? <span className="bad">{offline} 台离线</span> : servers.length ? '全部运行正常' : '暂无服务器'}</div>
+        <section className="deck">
+          <div className="deck-l">
+            <div className="eyebrow deck-eyebrow"><span className="tick" />Fleet status<span className="sep">/</span>节点总览</div>
+            <button type="button" className={clsx('deck-count', filter === 'online' && 'on', filter === 'offline' && 'on bad-on')}
+              title={offline ? '点击切换：在线 / 离线 / 全部' : '点击只看在线'}
+              onClick={() => setFilter(filter === 'all' ? (offline ? 'offline' : 'online') : filter === 'offline' ? 'online' : 'all')}>
+              <span className="n">{online.length}</span>
+              <span className="of">/{servers.length}</span>
+            </button>
+            <div className="deck-caption">
+              {!loaded ? '正在建立连接…' : offline ? <><span className="bad">{offline} 台离线</span>，其余节点在线运行</> : servers.length ? '所有节点在线，运行平稳' : '暂无服务器'}
+            </div>
+
+            <dl className="readouts">
+              <div>
+                <dt><IUp />上行</dt>
+                <dd>{bytesParts(up)[0]}<small>{bytesParts(up)[1]}/s</small></dd>
+              </div>
+              <div>
+                <dt><IDown />下行</dt>
+                <dd>{bytesParts(down)[0]}<small>{bytesParts(down)[1]}/s</small></dd>
+              </div>
+              <div>
+                <dt><ITraffic />累计流量</dt>
+                <dd>{bytesParts(totalIn + totalOut)[0]}<small>{bytesParts(totalIn + totalOut)[1]}</small></dd>
+                <span className="rd-sub">出 {fmtBytes(totalOut)} · 入 {fmtBytes(totalIn)}</span>
+              </div>
+              <div>
+                <dt><ICalendar />7 天内到期</dt>
+                <dd className={clsx(expiring.length > 0 && 'warn')}>{expiring.length}<small>台</small></dd>
+                <span className="rd-sub" title={expiring.map((s) => s.name).join('、')}>{expiring.length ? expiring.map((s) => s.name).join('、') : '近期无需续费'}</span>
+              </div>
+            </dl>
           </div>
-          <div className="sum glass c-info">
-            <div className="sum-h"><div className="label">实时带宽</div><span className="sum-ico info"><IPulse /></span></div>
-            <div className="big">{bytesParts(up)[0]}<small>{bytesParts(up)[1]}/s ↑</small></div>
-            <div className="sub">下行 {fmtSpeed(down)}</div>
-          </div>
-          <div className="sum glass c-violet">
-            <div className="sum-h"><div className="label">累计流量</div><span className="sum-ico violet"><ITraffic /></span></div>
-            <div className="big">{bytesParts(totalIn + totalOut)[0]}<small>{bytesParts(totalIn + totalOut)[1]}</small></div>
-            <div className="sub">出 {fmtBytes(totalOut)} · 入 {fmtBytes(totalIn)}</div>
-          </div>
-          <div className="sum glass c-warn">
-            <div className="sum-h"><div className="label">7 天内到期</div><span className="sum-ico warn"><ICalendar /></span></div>
-            <div className={clsx('big', expiring.length > 0 && 'warn')}>{expiring.length}<small>台</small></div>
-            <div className="sub">{expiring.length ? expiring.map((s) => s.name).join('、') : '近期无需续费'}</div>
+          <div className="deck-r">
+            <Radar servers={servers} />
+            <div className="radar-legend">
+              <span><i className="lg-dot" />在线 · 越外圈 CPU 越忙</span>
+              <span><i className="lg-dot off" />离线</span>
+            </div>
           </div>
         </section>
 
@@ -173,6 +192,7 @@ export default function Home() {
           <div className="grid">{[0, 1, 2].map((i) => <div key={i} className="skel glass" />)}</div>
         ) : shown.length === 0 ? (
           <div className="glass empty">
+            <EmptyArt />
             <h3>{servers.length ? '没有匹配的服务器' : '还没有服务器'}</h3>
             {servers.length ? '换个关键词或筛选条件试试' : '在后台「服务器 → 添加服务器」获取 Agent 安装命令'}
           </div>
@@ -206,7 +226,7 @@ function ListView({ servers, traffic, briefs }: { servers: LiveServer[]; traffic
             const disk = pct(st.disk_used, h.disk_total)
             return (
               <tr key={s.id} onClick={() => nav(`/server/${s.id}`)} style={{ cursor: 'pointer', opacity: s.online ? 1 : 0.55 }}>
-                <td><span className="row"><span className={clsx('dot', s.online ? 'on' : 'off')} /><b style={{ fontWeight: 650 }}>{s.name}</b>{s.country_code && <span className="cc">{s.country_code.toUpperCase()}</span>}</span></td>
+                <td><span className="row"><span className={clsx('dot', s.online ? 'on' : 'off')} />{s.country_code && <span className="cc">{s.country_code.toUpperCase()}</span>}<b style={{ fontWeight: 600 }}>{s.name}</b></span></td>
                 <td>{(st.cpu || 0).toFixed(1)}%<span className="cellmeter"><Meter value={st.cpu || 0} /></span></td>
                 <td>{mem.toFixed(1)}%<span className="cellmeter"><Meter value={mem} /></span></td>
                 <td>{disk.toFixed(1)}%<span className="cellmeter"><Meter value={disk} /></span></td>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Field } from '../components/ui'
-import { Mark, ThemeButton } from '../components/Topbar'
+import { Mark, Radar } from '../components/art'
+import { ThemeButton } from '../components/Topbar'
 import { api } from '../lib/api'
 
 export default function Login({ siteName, onLogin }: { siteName?: string; onLogin: () => void }) {
@@ -26,11 +27,21 @@ export default function Login({ siteName, onLogin }: { siteName?: string; onLogi
 
   return (
     <div className="login">
-      <div style={{ position: 'fixed', top: 14, right: 14 }}><ThemeButton /></div>
-      <form className="login-box glass" onSubmit={submit}>
+      <aside className="login-art">
+        <Radar servers={[]} />
         <div className="wordmark"><Mark /><span>{siteName || 'VPS 探针'}</span></div>
+        <div className="login-quote">
+          <div className="eyebrow" style={{ marginBottom: 14 }}>Read-only observatory</div>
+          <h2>看得见每一台机器，<br /><em>却碰不到</em>任何一台。</h2>
+          <p>面板与 Agent 双侧移除了终端、命令与文件管理。这里只有观测，没有遥控。</p>
+        </div>
+      </aside>
+      <div className="login-side">
+      <div style={{ position: 'fixed', top: 14, right: 14 }}><ThemeButton /></div>
+      <form className="login-box" onSubmit={submit}>
+        <div className="eyebrow">Console · 后台</div>
         <div>
-          <h1>登录后台</h1>
+          <h1>登录</h1>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>管理服务器、监控与告警</p>
         </div>
         <Field label="用户名"><input className="input" autoFocus autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} /></Field>
@@ -39,6 +50,7 @@ export default function Login({ siteName, onLogin }: { siteName?: string; onLogi
         <button className="btn primary" disabled={busy || !username || !password} style={{ height: 36 }}>{busy ? '登录中…' : '登录'}</button>
         <a href="/" className="muted" style={{ fontSize: 13, textAlign: 'center' }}>返回前台</a>
       </form>
+      </div>
     </div>
   )
 }

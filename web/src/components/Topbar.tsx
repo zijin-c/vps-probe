@@ -1,23 +1,11 @@
-import type { ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useNow } from '../lib/hooks'
 import { useTheme } from '../lib/theme'
+import { Mark } from './art'
 import { IMoon, ISun, IUser } from './icons'
 
-/** 品牌标记：玻璃质感的渐变圆角方块 + 脉冲线 */
-export function Mark() {
-  return (
-    <svg className="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <defs>
-        <linearGradient id="mk-fill" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#4f7cff" />
-          <stop offset="1" stopColor="#0ea5e9" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="22" height="22" rx="7" fill="url(#mk-fill)" />
-      <path d="M5.5 12.5h3l1.8-4 2.6 7.5 1.8-3.5h3.8" stroke="#ffffff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
+export { Mark }
 
 export function ThemeButton() {
   const [theme, toggle] = useTheme()
@@ -28,13 +16,27 @@ export function ThemeButton() {
   )
 }
 
+/** 顶栏右侧的 UTC 时钟，等宽数字，像仪器面板上的读数 */
+function Clock() {
+  const now = new Date(useNow(1000))
+  const p = (n: number) => String(n).padStart(2, '0')
+  return (
+    <span className="clock" title="协调世界时">
+      <span className="clock-k">UTC</span>
+      {p(now.getUTCHours())}<i>:</i>{p(now.getUTCMinutes())}<i>:</i>{p(now.getUTCSeconds())}
+    </span>
+  )
+}
+
 export default function Topbar({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <header className="header">
-      <div className="header-in float">
+      <div className="header-in">
         <Link to="/" className="wordmark"><Mark /><span>{title}</span></Link>
         <span className="spacer" />
         {right}
+        <Clock />
+        <span className="hdr-sep" />
         <ThemeButton />
         <a className="iconbtn" href="/dashboard/" title="后台" aria-label="后台"><IUser /></a>
       </div>

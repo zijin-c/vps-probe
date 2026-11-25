@@ -7,7 +7,8 @@ export interface Series {
   points: { t: number; v: number | null }[]
 }
 
-const PALETTE = ['#7aa7ff', '#3fcf8e', '#f2a93b', '#c792ea', '#f05d5e', '#5fd3e6']
+// 矿物色系：在暖灰底上互相区分、明暗两套主题都可读
+const PALETTE = ['#e0763a', '#4fa58a', '#7d8fd6', '#d1a33f', '#c06a8f', '#5aa9b8']
 export const seriesColor = (i: number) => PALETTE[i % PALETTE.length]
 
 /** 多序列折线图（SVG），悬停显示数值，点击图例可隐藏序列 */
