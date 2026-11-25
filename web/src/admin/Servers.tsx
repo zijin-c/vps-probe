@@ -545,16 +545,18 @@ function InstallModal({ onClose }: { onClose: () => void }) {
   const [server, setServer] = useState(host || `${location.hostname}:${location.port || (location.protocol === 'https:' ? '443' : '80')}`)
   const [tls, setTls] = useState(setting?.config.tls ?? location.protocol === 'https:')
   const [uuid, setUuid] = useState('')
+  const [mode, setMode] = useState<'root' | 'sudo'>('root')
   const panel = location.origin
   const secret = profile.agent_secret || ''
-  const cmd = `curl -fsSL ${panel}/probe/agent/install.sh | sudo sh -s -- --panel ${panel} --server ${server}${tls ? ' --tls' : ''}${uuid.trim() ? ` --uuid ${uuid.trim()}` : ''} --secret ${secret}`
-  const uninstall = `curl -fsSL ${panel}/probe/agent/install.sh | sudo sh -s -- --uninstall`
+  const sh = mode === 'sudo' ? 'sudo sh' : 'sh'
+  const cmd = `curl -fsSL ${panel}/probe/agent/install.sh | ${sh} -s -- --panel ${panel} --server ${server}${tls ? ' --tls' : ''}${uuid.trim() ? ` --uuid ${uuid.trim()}` : ''} --secret ${secret}`
+  const uninstall = `curl -fsSL ${panel}/probe/agent/install.sh | ${sh} -s -- --uninstall`
   const logCmd = `journalctl -u nezha-ro-agent -n 50 --no-pager`
 
   return (
     <Modal title="添加服务器" onClose={onClose} width={720}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <p className="muted" style={{ margin: 0 }}>在要监控的 VPS 上以 root 执行下面的命令。Agent 从本面板下载（只读版本，不含远程执行），装好后几秒内就会出现在列表里。</p>
+        <p className="muted" style={{ margin: 0 }}>在要监控的 VPS 上执行下面的命令。Agent 从本面板下载（只读版本，不含远程执行），装好后几秒内就会出现在列表里。</p>
         <div className="form">
           <Field label="Agent 连接地址" hint="域名或 IP:端口。走 HTTPS 反代时填 域名:443 并勾选 TLS">
             <input className="input" value={server} onChange={(e) => setServer(e.target.value)} />
@@ -569,6 +571,17 @@ function InstallModal({ onClose }: { onClose: () => void }) {
         </div>
         {!host && <div className="note warn">还没有在「系统设置」里填写 Agent 连接地址，当前用的是浏览器地址，部署到服务器后建议去设置一下。</div>}
         {!secret && <div className="note bad">没取到 Agent 密钥，请重新登录后再试。</div>}
+        <div className="row">
+          <Seg<'root' | 'sudo'>
+            value={mode}
+            onChange={setMode}
+            label="运行方式"
+            options={[
+              { value: 'root', label: 'root 直接运行（无 sudo）' },
+              { value: 'sudo', label: '普通用户（带 sudo）' },
+            ]}
+          />
+        </div>
         <div className="code">{cmd}</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn primary" onClick={() => copyText(cmd).then(() => toast('已复制安装命令', 'ok'))}><ICopy />复制安装命令</button>
