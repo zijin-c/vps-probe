@@ -150,7 +150,7 @@ func probeGetQuality(c *gin.Context) {
 		c.JSON(http.StatusOK, newErrorResponse(errors.New("server not found")))
 		return
 	}
-	c.JSON(http.StatusOK, model.CommonResponse[map[string]any]{Success: true, Data: probe.GetQuality(id, !signedIn)})
+	c.JSON(http.StatusOK, model.CommonResponse[map[string]any]{Success: true, Data: probe.GetQuality(id, true)})
 }
 
 // probeQualitySummary 返回所有可见服务器的线路 / 解锁摘要，供首页卡片自动显示。

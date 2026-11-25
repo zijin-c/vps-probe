@@ -286,8 +286,7 @@ function IPPanel({ ip }: { ip: IPInfo }) {
   const flags = [...new Set(sources.flatMap((x) => x.flags || []))]
   return (
     <div className="two">
-      <dl className="glass dl" style={{ alignSelf: 'start' }}>
-        <dt>地址</dt><dd className="mono">{ip.ip}</dd>
+      <dl className="glass dl">
         <dt>类型</dt>
         <dd className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
           {ip.ip_type === 'native' ? <span className="tag ok">原生 IP</span> : ip.ip_type === 'broadcast' ? <span className="tag warn">广播 IP</span> : <span className="tag plain">未知</span>}

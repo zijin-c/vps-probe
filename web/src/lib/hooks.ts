@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   api, getService, getServiceHistory, getSetting, isOnline, subscribeServers,
   type CycleStats, type QualityBrief, type QualityReport, type ServiceResponse, type Setting, type StreamServer,
@@ -11,28 +11,80 @@ export interface LiveServer extends StreamServer {
   billing: Billing
 }
 
-/** 实时服务器列表（WebSocket，2 秒一帧） */
+// 模块级共享 WebSocket 状态：前台页面间切换（首页 ↔ 详情页）复用同一条连接，
+// 避免反复建连/断连导致的卡顿与在线人数虚增。
+interface LiveSnapshot {
+  servers: LiveServer[]
+  viewers: number
+  connected: boolean
+  loaded: boolean
+}
+
+const liveNotes = new Map<number, string>()
+let liveSnap: LiveSnapshot = { servers: [], viewers: 0, connected: false, loaded: false }
+const liveListeners = new Set<() => void>()
+let liveStop: (() => void) | null = null
+let liveCloseTimer: number | undefined
+
+function emitLive() {
+  liveListeners.forEach((fn) => fn())
+}
+
+function ensureLiveStarted() {
+  if (liveCloseTimer !== undefined) {
+    clearTimeout(liveCloseTimer)
+    liveCloseTimer = undefined
+  }
+  if (liveStop) return
+  liveStop = subscribeServers(
+    (f) => {
+      const now = f.now || Date.now()
+      const list = (f.servers || []).map((s) => {
+        if (s.public_note !== undefined) liveNotes.set(s.id, s.public_note)
+        const raw = liveNotes.get(s.id) || ''
+        const note = parseNote(raw)
+        return { ...s, public_note: raw, online: isOnline(s.last_active, now), note, billing: parseBilling(note, new Date(now)) }
+      })
+      liveSnap = { servers: list, viewers: f.online || 0, connected: true, loaded: true }
+      emitLive()
+    },
+    (connected) => {
+      if (liveSnap.connected !== connected) {
+        liveSnap = { ...liveSnap, connected }
+        emitLive()
+      }
+    },
+  )
+}
+
+function maybeStopLive() {
+  if (liveListeners.size > 0 || !liveStop) return
+  liveCloseTimer = window.setTimeout(() => {
+    liveCloseTimer = undefined
+    if (liveListeners.size === 0 && liveStop) {
+      liveStop()
+      liveStop = null
+      liveSnap = { ...liveSnap, connected: false }
+    }
+  }, 3000)
+}
+
+/** 实时服务器列表（WebSocket，2 秒一帧；全局复用单条连接） */
 export function useLiveServers() {
-  const [servers, setServers] = useState<LiveServer[]>([])
-  const [viewers, setViewers] = useState(0)
-  const [connected, setConnected] = useState(false)
-  const [loaded, setLoaded] = useState(false)
-  const notes = useRef(new Map<number, string>())
+  const [snap, setSnap] = useState<LiveSnapshot>(() => liveSnap)
 
-  useEffect(() => subscribeServers((f) => {
-    const now = f.now || Date.now()
-    const list = (f.servers || []).map((s) => {
-      if (s.public_note !== undefined) notes.current.set(s.id, s.public_note)
-      const raw = notes.current.get(s.id) || ''
-      const note = parseNote(raw)
-      return { ...s, public_note: raw, online: isOnline(s.last_active, now), note, billing: parseBilling(note, new Date(now)) }
-    })
-    setServers(list)
-    setViewers(f.online || 0)
-    setLoaded(true)
-  }, setConnected), [])
+  useEffect(() => {
+    const onUpdate = () => setSnap(liveSnap)
+    liveListeners.add(onUpdate)
+    ensureLiveStarted()
+    onUpdate()
+    return () => {
+      liveListeners.delete(onUpdate)
+      maybeStopLive()
+    }
+  }, [])
 
-  return { servers, viewers, connected, loaded }
+  return snap
 }
 
 export interface LatencyLine {
