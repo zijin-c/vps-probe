@@ -45,6 +45,15 @@ type QualityConf struct {
 
 type SiteConf struct {
 	FooterText string `yaml:"footer_text"`
+	Theme      string `yaml:"theme"`      // 前台主题 id（见 web/src/themes）
+	ThemeMode  string `yaml:"theme_mode"` // 访客默认明暗：auto / dark / light
+}
+
+// HistoryConf 控制面板的历史数据（TSDB）。默认开启并存放在 data/tsdb，
+// 不需要再手动改 config.yaml；在后台切换后面板会自动重启生效。
+type HistoryConf struct {
+	Enabled       bool `yaml:"enabled"`
+	RetentionDays int  `yaml:"retention_days"`
 }
 
 type Config struct {
@@ -52,6 +61,39 @@ type Config struct {
 	Telegram TelegramConf `yaml:"telegram"`
 	Backup   BackupConf   `yaml:"backup"`
 	Quality  QualityConf  `yaml:"quality"`
+	History  HistoryConf  `yaml:"history"`
+}
+
+const (
+	defaultTheme     = "observatory"
+	defaultThemeMode = "auto"
+)
+
+func normTheme(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" || len(s) > 40 {
+		return defaultTheme
+	}
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return defaultTheme
+		}
+	}
+	return s
+}
+
+func normMode(s string) string {
+	switch s {
+	case "dark", "light", "auto":
+		return s
+	}
+	return defaultThemeMode
+}
+
+// HistorySettings 返回历史数据开关与保留天数，供 main 在初始化 TSDB 前使用。
+func HistorySettings() (enabled bool, path string, retentionDays int) {
+	c := getConf()
+	return c.History.Enabled, filepath.Join(dataDir, "tsdb"), c.History.RetentionDays
 }
 
 const defaultFooterText = "只读探针，Agent 不执行任何远程指令"
@@ -60,7 +102,10 @@ func defaultConfig() Config {
 	return Config{
 		Site: SiteConf{
 			FooterText: defaultFooterText,
+			Theme:      defaultTheme,
+			ThemeMode:  defaultThemeMode,
 		},
+		History: HistoryConf{Enabled: true, RetentionDays: 30},
 		Telegram: TelegramConf{
 			APIBase:         "https://api.telegram.org",
 			NotifyOffline:   true,
@@ -156,6 +201,11 @@ func Init(dir string) error {
 	if c.Backup.Keep <= 0 {
 		c.Backup.Keep = 7
 	}
+	c.Site.Theme = normTheme(c.Site.Theme)
+	c.Site.ThemeMode = normMode(c.Site.ThemeMode)
+	if c.History.RetentionDays <= 0 {
+		c.History.RetentionDays = 30
+	}
 	confMu.Lock()
 	conf = c
 	confMu.Unlock()
@@ -172,7 +222,14 @@ func getConf() Config {
 type ConfigView struct {
 	Site struct {
 		FooterText string `json:"footer_text"`
+		Theme      string `json:"theme"`
+		ThemeMode  string `json:"theme_mode"`
 	} `json:"site"`
+	History struct {
+		Enabled       bool `json:"enabled"`
+		RetentionDays int  `json:"retention_days"`
+		Active        bool `json:"active"` // 当前进程是否真的在记录（改动后需重启才会变化）
+	} `json:"history"`
 	Telegram struct {
 		HasBotToken     bool    `json:"has_bot_token"`
 		ChatIDs         []int64 `json:"chat_ids"`
@@ -203,7 +260,13 @@ type ConfigView struct {
 type ConfigPatch struct {
 	Site *struct {
 		FooterText *string `json:"footer_text"`
+		Theme      *string `json:"theme"`
+		ThemeMode  *string `json:"theme_mode"`
 	} `json:"site"`
+	History *struct {
+		Enabled       *bool `json:"enabled"`
+		RetentionDays *int  `json:"retention_days"`
+	} `json:"history"`
 	Telegram *struct {
 		BotToken        *string  `json:"bot_token"`
 		ChatIDs         *[]int64 `json:"chat_ids"`
@@ -233,6 +296,11 @@ func GetConfigView() ConfigView {
 	c := getConf()
 	var v ConfigView
 	v.Site.FooterText = c.Site.FooterText
+	v.Site.Theme = c.Site.Theme
+	v.Site.ThemeMode = c.Site.ThemeMode
+	v.History.Enabled = c.History.Enabled
+	v.History.RetentionDays = c.History.RetentionDays
+	v.History.Active = historyActive
 	v.Telegram.HasBotToken = c.Telegram.BotToken != ""
 	v.Telegram.ChatIDs = append([]int64{}, c.Telegram.ChatIDs...)
 	if v.Telegram.ChatIDs == nil {
@@ -287,8 +355,34 @@ func applySecretPatch(dst *string, src *string) bool {
 func SaveConfigPatch(p ConfigPatch) (needRestart bool, err error) {
 	confMu.Lock()
 	c := conf
-	if p.Site != nil && p.Site.FooterText != nil {
-		c.Site.FooterText = strings.TrimSpace(*p.Site.FooterText)
+	if p.Site != nil {
+		if p.Site.FooterText != nil {
+			c.Site.FooterText = strings.TrimSpace(*p.Site.FooterText)
+		}
+		if p.Site.Theme != nil {
+			c.Site.Theme = normTheme(*p.Site.Theme)
+		}
+		if p.Site.ThemeMode != nil {
+			c.Site.ThemeMode = normMode(*p.Site.ThemeMode)
+		}
+	}
+	if p.History != nil {
+		if p.History.Enabled != nil && *p.History.Enabled != c.History.Enabled {
+			c.History.Enabled = *p.History.Enabled
+			needRestart = true
+		}
+		if p.History.RetentionDays != nil {
+			d := *p.History.RetentionDays
+			if d < 1 {
+				d = 1
+			} else if d > 365 {
+				d = 365
+			}
+			if d != c.History.RetentionDays {
+				c.History.RetentionDays = d
+				needRestart = true
+			}
+		}
 	}
 	if p.Telegram != nil {
 		t := p.Telegram
@@ -407,3 +501,18 @@ func SaveConfigPatch(p ConfigPatch) (needRestart bool, err error) {
 
 // DataDir 返回数据目录。
 func DataDir() string { return dataDir }
+
+// historyActive 记录本进程启动时 TSDB 是否真的开启（由 main 设置）。
+var historyActive bool
+
+func SetHistoryActive(v bool) { historyActive = v }
+
+// SiteMeta 是前台公开读取的站点外观信息。
+func SiteMeta() map[string]string {
+	c := getConf()
+	return map[string]string{
+		"footer_text": c.Site.FooterText,
+		"theme":       c.Site.Theme,
+		"theme_mode":  c.Site.ThemeMode,
+	}
+}

@@ -165,7 +165,9 @@ func main() {
 			return nil
 		},
 		func() error { return singleton.InitDBFromPath(dashboardCliParam.DatabaseLocation) },
+		applyProbeHistory, // 只读分支：历史数据默认开启，由后台开关控制，无需手改 config.yaml
 		singleton.InitTSDB,
+		func() error { probe.SetHistoryActive(singleton.Conf.TSDB.DataPath != ""); return nil },
 		func() error { return initSystem(serviceSentinelDispatchBus) }); err != nil {
 		log.Fatal(err)
 	}

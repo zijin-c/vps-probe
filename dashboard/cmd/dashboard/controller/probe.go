@@ -56,6 +56,7 @@ func registerProbeRoutes(r *gin.Engine, authMw, optionalAuthMw gin.HandlerFunc) 
 	g.GET("/config", probeGetConfig)
 	g.PATCH("/config", probeSaveConfig)
 	g.POST("/telegram/test", probeTestTelegram)
+	g.POST("/restart", probeRestart)
 }
 
 var probeAgentFiles = map[string]string{
@@ -308,11 +309,13 @@ func probeRestoreLocalBackup(c *gin.Context) {
 }
 
 func probeGetMeta(c *gin.Context) {
-	v := probe.GetConfigView()
-	c.JSON(http.StatusOK, model.CommonResponse[map[string]string]{
-		Success: true,
-		Data:    map[string]string{"footer_text": v.Site.FooterText},
-	})
+	c.JSON(http.StatusOK, model.CommonResponse[map[string]string]{Success: true, Data: probe.SiteMeta()})
+}
+
+// probeRestart 让面板优雅退出，由 docker restart: always / systemd Restart=always 拉起（用于让历史数据等设置生效）。
+func probeRestart(c *gin.Context) {
+	c.JSON(http.StatusOK, model.CommonResponse[string]{Success: true, Data: "面板正在重启，约 10 秒后恢复"})
+	go probe.RequestRestart()
 }
 
 func probeGetConfig(c *gin.Context) {

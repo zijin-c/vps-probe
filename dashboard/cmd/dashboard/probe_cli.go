@@ -10,6 +10,24 @@ import (
 	"github.com/nezhahq/nezha/service/singleton"
 )
 
+// applyProbeHistory 按 probe.yaml 的 history 设置决定 TSDB 是否开启：
+// 开启且 config.yaml 未指定路径时使用 data/tsdb；关闭时即使 config.yaml 配了路径也不启用。
+func applyProbeHistory() error {
+	enabled, path, days := probe.HistorySettings()
+	if !enabled {
+		singleton.Conf.TSDB.DataPath = ""
+		log.Printf("PROBE>> 历史数据已在后台关闭")
+		return nil
+	}
+	if singleton.Conf.TSDB.DataPath == "" {
+		singleton.Conf.TSDB.DataPath = path
+	}
+	if days > 0 {
+		singleton.Conf.TSDB.RetentionDays = uint16(days) // probe 侧已限制在 1~365
+	}
+	return nil
+}
+
 // runProbeCli 处理只读分支的启动前逻辑：
 //   - -restore 文件：恢复后退出（返回 true）
 //   - -backup 文件：导出备份后退出（返回 true）

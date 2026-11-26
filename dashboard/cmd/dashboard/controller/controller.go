@@ -491,7 +491,7 @@ func fallbackToFrontend(frontendDist fs.FS) func(*gin.Context) {
 		// 新增前端路由时必须在 admin-frontend/src/main.tsx 与这里同步加。
 		regexp.MustCompile(`^/dashboard/transfer$`),
 		// 只读分支自研后台（web/src/admin）的路由
-		regexp.MustCompile(`^/dashboard/(servers|groups|monitors|alerts|notifications|backup|account)$`),
+		regexp.MustCompile(`^/dashboard/(overview|servers|groups|monitors|alerts|notifications|backup|account|probe|themes)$`),
 	}
 
 	getFallbackStatusCode := func(path string) int {
