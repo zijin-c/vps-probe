@@ -9,13 +9,16 @@ import '@fontsource-variable/jetbrains-mono/index.css'
 import '@fontsource/instrument-serif/latin-400.css'
 import '@fontsource/instrument-serif/latin-400-italic.css'
 import { Backdrop } from './components/art'
+import { SkinProvider } from './lib/theme'
 import './styles.css'
+import './themes'
 
 // 后台单独分包，访客只加载前台代码
 const Admin = lazy(() => import('./admin/Admin'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <SkinProvider>
     <Backdrop />
     <ToastProvider>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
@@ -29,5 +32,6 @@ createRoot(document.getElementById('root')!).render(
         </Suspense>
       </BrowserRouter>
     </ToastProvider>
+    </SkinProvider>
   </StrictMode>,
 )

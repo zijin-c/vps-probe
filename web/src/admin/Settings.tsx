@@ -90,7 +90,7 @@ export default function Settings() {
             <div className="fld">
               <span>监控历史（TSDB）</span>
               <div style={{ height: 36, display: 'flex', alignItems: 'center' }}>
-                {setting?.tsdb_enabled ? <span className="tag ok">已启用</span> : <span className="tag warn">未启用：在 config.yaml 设置 tsdb.data_path</span>}
+                {setting?.tsdb_enabled ? <span className="tag ok">已启用</span> : <a className="tag warn" href="/dashboard/themes">未启用：去「主题与外观」一键开启</a>}
               </div>
             </div>
           </div>

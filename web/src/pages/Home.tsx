@@ -6,6 +6,8 @@ import { EmptyArt, Radar } from '../components/art'
 import { ICalendar, IDown, IGrid, IList, ISearch, ITraffic, IUp } from '../components/icons'
 import { Meter, Seg, Dropdown } from '../components/ui'
 import { api, type QualityBrief, type ServerGroup } from '../lib/api'
+import { useSkin } from '../lib/theme'
+import { cardFor, findTheme } from '../themes/registry'
 import { priceText } from '../lib/billing'
 import { bytesParts, clsx, fmtBytes, fmtSpeed, pct, toneVar } from '../lib/format'
 import { cycleTrafficMap, useLiveServers, useProbeMeta, useQualitySummary, useServiceData, useSetting, useTitle, type LiveServer } from '../lib/hooks'
@@ -37,6 +39,9 @@ function savePref(k: string, v: string) {
 export default function Home() {
   const setting = useSetting()
   const probeMeta = useProbeMeta()
+  const { skin, previewing, exitPreview } = useSkin()
+  const themeDef = findTheme(skin)
+  const Card = cardFor(skin) || ServerCard
   const site = setting?.config.site_name || 'VPS 探针'
   useTitle(site)
   const { servers, viewers, connected, loaded } = useLiveServers()
@@ -124,7 +129,39 @@ export default function Home() {
           {connected ? `${viewers} 人在看` : '重连中…'}
         </span>
       } />
-      <main className="page">
+      <main className={clsx('page', themeDef.wide && 'mx-page')}>
+        {previewing && (
+          <div className="note info row" style={{ marginBottom: 14, flexWrap: 'wrap' }}>
+            <span style={{ flex: 1 }}>正在预览主题「{themeDef.name}」，只有你这个标签页能看到。</span>
+            <button className="btn sm" onClick={exitPreview}>退出预览</button>
+          </div>
+        )}
+        {themeDef.id === 'matrix' ? (
+          <section className="mx-summary">
+            <button type="button" className={clsx('mx-sum', (filter === 'online' || filter === 'offline') && 'on')}
+              title={offline ? '点击切换：在线 / 离线 / 全部' : '点击只看在线'}
+              onClick={() => setFilter(filter === 'all' ? (offline ? 'offline' : 'online') : filter === 'offline' ? 'online' : 'all')}>
+              <span className="k">在线节点</span>
+              <b><span className="ok">{online.length}</span><small>/ {servers.length}</small></b>
+              <span className="s">{offline ? <span className="bad">{offline} 台离线</span> : servers.length ? '全部在线' : '暂无服务器'}</span>
+            </button>
+            <div className="mx-sum">
+              <span className="k">实时上行</span>
+              <b className="ok">{bytesParts(up)[0]}<small>{bytesParts(up)[1]}/s</small></b>
+              <span className="s">下行 {fmtSpeed(down)}</span>
+            </div>
+            <div className="mx-sum">
+              <span className="k">累计流量</span>
+              <b>{bytesParts(totalIn + totalOut)[0]}<small>{bytesParts(totalIn + totalOut)[1]}</small></b>
+              <span className="s">出 {fmtBytes(totalOut)} · 入 {fmtBytes(totalIn)}</span>
+            </div>
+            <div className="mx-sum">
+              <span className="k">7 天内到期</span>
+              <b className={expiring.length ? 'warn' : ''}>{expiring.length}<small>台</small></b>
+              <span className="s" title={expiring.map((s) => s.name).join('、')}>{expiring.length ? expiring.map((s) => s.name).join('、') : '近期无需续费'}</span>
+            </div>
+          </section>
+        ) : (
         <section className="deck">
           <div className="deck-l">
             <div className="eyebrow deck-eyebrow"><span className="tick" />Fleet status<span className="sep">/</span>节点总览</div>
@@ -167,6 +204,7 @@ export default function Home() {
             </div>
           </div>
         </section>
+        )}
 
         <div className="toolbar">
           <Seg<Filter> className="scroll" label="筛选" value={filter} onChange={setFilter} options={filters} />
@@ -197,8 +235,8 @@ export default function Home() {
             {servers.length ? '换个关键词或筛选条件试试' : '在后台「服务器 → 添加服务器」获取 Agent 安装命令'}
           </div>
         ) : view === 'grid' ? (
-          <div className="grid">
-            {shown.map((s) => <ServerCard key={s.id} s={s} traffic={traffic.get(s.id)} latency={byServer.get(s.id)} brief={briefs[s.id]} />)}
+          <div className={clsx('grid', themeDef.wide && 'mx-grid')}>
+            {shown.map((s) => <Card key={s.id} s={s} traffic={traffic.get(s.id)} latency={byServer.get(s.id)} brief={briefs[s.id]} />)}
           </div>
         ) : <ListView servers={shown} traffic={traffic} briefs={briefs} />}
 

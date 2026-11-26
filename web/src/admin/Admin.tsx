@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Mark, ThemeButton } from '../components/Topbar'
 import {
-  IArchive, IBell, IGrid, IHome, ILayers, ILogout, IMenu, IPulse, ISend, IServer, ISettings, ISliders, IUser, IX,
+  IArchive, IBell, IEye, IGrid, IHome, ILayers, ILogout, IMenu, IPulse, ISend, IServer, ISettings, ISliders, IUser, IX,
 } from '../components/icons'
 import { api, getSetting, type Profile, type Setting } from '../lib/api'
 import { useTitle } from '../lib/hooks'
@@ -15,6 +15,7 @@ import Monitors from './Monitors'
 import Alerts from './Alerts'
 import Notifications from './Notifications'
 import ProbeConfig from './ProbeConfig'
+import Themes from './Themes'
 import Settings from './Settings'
 import Backup from './Backup'
 import Account from './Account'
@@ -33,6 +34,7 @@ const NAV: { group: string; items: { to: string; label: string; icon: typeof ISe
     { to: 'notifications', label: '通知方式', icon: ISend },
   ] },
   { group: '系统', items: [
+    { to: 'themes', label: '主题与外观', icon: IEye },
     { to: 'probe', label: '探针配置', icon: ISliders },
     { to: 'backup', label: '备份与恢复', icon: IArchive },
     { to: 'settings', label: '系统设置', icon: ISettings },
@@ -124,6 +126,7 @@ export default function Admin() {
                 <Route path="monitors" element={<Monitors />} />
                 <Route path="alerts" element={<Alerts />} />
                 <Route path="notifications" element={<Notifications />} />
+                <Route path="themes" element={<Themes />} />
                 <Route path="probe" element={<ProbeConfig />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="backup" element={<Backup />} />

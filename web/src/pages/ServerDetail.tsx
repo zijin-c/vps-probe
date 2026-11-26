@@ -5,7 +5,7 @@ import { CARRIERS, coreCount, expiryText, osLabel } from '../components/ServerCa
 import Topbar from '../components/Topbar'
 import { IBack } from '../components/icons'
 import { AnimNum, Ring, Seg, Sparkline, useToast } from '../components/ui'
-import { api, getMetric, type IPInfo, type MetricSeries, type QualityPart, type QualityReport, type RouteItem, type UnlockItem } from '../lib/api'
+import { api, getMetric, type IPInfo, type MetricSeries, type QualityPart, type QualityReport, type InboundItem, type RouteItem, type UnlockItem } from '../lib/api'
 import { priceText, splitTags } from '../lib/billing'
 import { bytesParts, clsx, fmtAgo, fmtBytes, fmtDate, fmtUptime, latencyTone, maskIP, pct, toneVar } from '../lib/format'
 import { cycleTrafficMap, useLiveServers, useNow, useProbeMeta, useQuality, useServiceData, useSetting, useSignedIn, useTitle, type LatencyLine } from '../lib/hooks'
@@ -254,10 +254,10 @@ function QualitySections({ id, report, reload, signedIn }: { id: number; report?
       )}
       <section className="sec">
         <div className="sec-h">
-          <h2>三网回程</h2>
+          <h2>三网线路</h2>
           <PartStatus part="route" id={id} report={report} reload={reload} signedIn={signedIn} />
         </div>
-        {report.routes_v4?.length ? <RoutePanel routes={report.routes_v4} /> : (
+        {report.routes_v4?.length ? <RoutePanel routes={report.routes_v4} inbound={report.inbound_v4} /> : (
           <div className="glass empty" style={{ padding: 28 }}>{report.error && !never('route') ? report.error : emptyText('route')}</div>
         )}
       </section>
@@ -339,16 +339,27 @@ function riskTone(score?: number | null, label?: string): string {
 }
 
 /** 按运营商分三列，每列列出北京 / 上海 / 广州的回程，点击展开路由 */
-function RoutePanel({ routes }: { routes: RouteItem[] }) {
+function RoutePanel({ routes, inbound }: { routes: RouteItem[]; inbound?: InboundItem[] }) {
   const [open, setOpen] = useState<string | null>(null)
   const byCarrier = CARRIERS.map((c) => ({ c, items: routes.filter((r) => r.carrier === c) })).filter((x) => x.items.length)
   return (
     <div className="route-grid">
       {byCarrier.map(({ c, items }) => {
         const best = items.find((r) => r.premium) || items[0]
+        const go = inbound?.find((x) => x.carrier === c)
+        const how = go?.method === 'probe' ? `实测${go.city ? ` · ${go.city}` : ''}` : go?.method === 'bgp' ? 'BGP 推断' : '推测'
         return (
           <div key={c} className="route-col glass">
             <h3>{c}<span className="spacer" />{best && <span className={clsx('tag', best.premium ? 'route' : 'plain')}>{best.label}</span>}</h3>
+            {go && (
+              <div className="route-item" title={go.method === 'probe' ? '由国内探针（Globalping）对本机做 MTR 判定' : go.method === 'bgp' ? '根据公开 BGP 数据中的直连关系推断' : '未找到国内探针与直连关系，按运营商默认骨干网推测'}>
+                <span className="city">去程</span>
+                <span className={clsx('tag', go.premium ? 'route' : 'plain')} style={go.guess ? { opacity: .65 } : undefined}>{go.label}</span>
+                {go.premium && <span className="gold" style={{ fontSize: 11.5 }}>精品</span>}
+                <span className="spacer" />
+                <span className="faint" style={{ fontSize: 11.5 }}>{how}</span>
+              </div>
+            )}
             {items.map((r) => {
               const key = `${r.carrier}-${r.city}`
               return (
@@ -493,7 +504,7 @@ function MetricChart({ id, tab, period, memTotal, diskTotal, tsdb }: {
     return () => { alive = false }
   }, [id, tab, period, tsdb]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!tsdb) return <div className="empty" style={{ padding: 32 }}>面板未开启历史数据（TSDB）。在 config.yaml 设置 tsdb.data_path 后重启。</div>
+  if (!tsdb) return <div className="empty" style={{ padding: 32 }}>面板未开启历史数据。管理员可在后台「主题与外观 → 历史数据」一键开启。</div>
   if (!data) return <div style={{ height: 230 }} />
   const total = tab === 'mem' ? memTotal : diskTotal
   const series: Series[] = data.map((d, i) => ({

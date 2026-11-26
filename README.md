@@ -94,6 +94,21 @@ Agent 只会执行 4 种任务：HTTP GET、ICMP Ping、TCP Ping（三网延迟/
   - **分组 / 延迟监控 / 告警规则 / 通知方式**：告警规则支持列表一键开关与多条件编辑；支持快速创建周期流量配额。
   - **探针配置**：直接在后台可视化编辑 `data/probe.yaml`（Telegram 机器人配置与一键测试推送、IP 质量检测间隔与 API 密钥）。
   - **备份与恢复**：手动点击打包并通过浏览器直接下载 `.tar.gz`；支持拖拽上传恢复（自动备份旧数据到 `data/backups/pre-restore-时间/` 并重启生效）。
+  - **主题与外观**：主题仓库（一键切换、新标签页预览）、访客默认明暗（跟随系统 / 深色 / 浅色）、历史数据开关与保留天数（一键重启生效）。
+
+#### 主题仓库
+| 主题 | 风格 |
+| --- | --- |
+| 观测台 `observatory` | 暖调石墨 + 等高线背景 + 雷达概览，克制的仪表面板 |
+| 矩阵 `matrix` | 信息最全的彩色卡片：分色 CPU/内存/存储/负载、流量消耗与流量周期方块进度、三网回程与延迟丢包、卡片内展开「IP 能力」（各数据库使用类型 / 风险评分 / 流媒体解锁）|
+
+- 每个主题都有深色和浅色两套；访客自己点过明暗切换后以访客选择为准。
+- 预览不影响他人：打开 `/?theme=matrix` 只在当前标签页生效，页面顶部有「退出预览」。
+- 新增主题：在 `web/src/themes/<id>/` 放卡片组件和以 `[data-skin="<id>"]` 限定的 CSS，然后在 `themes/registry.ts` 登记、在 `themes/index.ts` 注册卡片即可。
+
+#### 历史数据（TSDB）
+默认开启，存放在 `data/tsdb`，**不再需要修改 config.yaml**。在后台「主题与外观 → 历史数据」可以关闭或调整保留天数（7–180 天），保存后点「立即重启面板」生效（依赖 docker `restart: always` 或 systemd `Restart=always`）。
+如果 `config.yaml` 里已经手动写了 `tsdb.data_path`，开启时沿用该路径。
 
 ### 3. Telegram 机器人（后台「探针配置」或 `data/probe.yaml`）
 - 交互命令：`/list` 概览、`/status 名称` 详情、`/traffic` 周期流量、`/expire` 续费一览、`/backup` 立即打包并发送备份文件、`/id` 查看会话 ID。
@@ -111,6 +126,7 @@ Agent 只会执行 4 种任务：HTTP GET、ICMP Ping、TCP Ping（三网延迟/
 | 原生 / 广播 IP | RDAP 注册国家与地理位置国家一致为原生，否则为广播 |
 | 流媒体 / AI | Netflix、YouTube Premium、Disney+、Prime Video、TikTok、ChatGPT、Reddit |
 | 三网回程 | 纯 Go 原始 ICMP traceroute 到北京/上海/广州三网，按途经骨干网识别 CN2 GIA / GT / 163 / 9929 / 4837 / CUG / CMIN2 / CMI / CTGNet |
+| 三网去程 | ① 通过 [Globalping](https://globalping.io) 公开探测网络里位于国内三网的探针对本机 IP 做 MTR，用同一套骨干网规则判定（实测）；② 找不到探针时按 RIPEstat 公开 BGP 数据看本机 ASN 是否直连 4809 / 9929 / 58807 等（推断）；③ 都没有结论时按默认骨干网推测，页面标注"?"。会把本机 IP 发给 Globalping 作为探测目标 |
 
 ### 5. 其它改动
 - SQLite 驱动替换为纯 Go（`glebarez/sqlite`），无需 CGO，与上游 `sqlite.db` 完全兼容。
@@ -143,5 +159,5 @@ git subtree pull --prefix=agent     https://github.com/nezhahq/agent.git main   
 
 ## 已知限制
 - 自研后台聚焦只读探针核心场景，未提供 DDNS、多用户、API Token、WAF 等上游界面（底层接口仍在）。
-- 不测去程与单线程测速（避免消耗大量流量配额）；三网回程目前仅测 IPv4。
+- 不做单线程测速（避免消耗大量流量配额）；三网去程 / 回程目前仅测 IPv4；去程依赖 Globalping 国内探针的在线情况，个别时候会退回推断。
 - 面板上 4 个上游告警规则单测在 Windows 下本就失败，与本分支无关。

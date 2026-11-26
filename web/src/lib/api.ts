@@ -270,6 +270,18 @@ export interface UnlockItem {
   note?: string
 }
 export interface RouteHop { ttl: number; ip?: string; rtt?: number; asn?: string; tag?: string }
+/** 去程：Globalping 国内探针实测 / BGP 推断 / 默认推测 */
+export interface InboundItem {
+  carrier: string
+  label: string
+  premium?: boolean
+  guess?: boolean
+  method?: 'probe' | 'bgp' | 'guess'
+  city?: string
+  rtt?: number
+  via?: string[]
+  hops?: RouteHop[]
+}
 export interface RouteItem {
   carrier: string         // 电信 / 联通 / 移动
   city?: string
@@ -288,7 +300,8 @@ export interface QualityStatus {
 /** 首页卡片用的摘要 */
 export interface QualityBrief {
   routes?: Record<string, { label: string; premium?: boolean }>
-  unlock?: { name: string; status: UnlockItem['status']; region?: string }[]
+  inbound?: Record<string, { label: string; premium?: boolean; guess?: boolean; method?: string }>
+  unlock?: { name: string; status: UnlockItem['status']; region?: string; native?: boolean }[]
   ip_type?: 'native' | 'broadcast' | ''
   usage?: string
 }
@@ -302,6 +315,7 @@ export interface QualityReport {
   unlock?: UnlockItem[]
   routes_v4?: RouteItem[]
   routes_v6?: RouteItem[]
+  inbound_v4?: InboundItem[]
   error?: string
 }
 
