@@ -163,7 +163,7 @@ export default function MatrixCard({ s, traffic, latency, brief }: CardProps) {
         </div>
       </section>
 
-      {traffic && traffic.limit > 0 && (
+      {traffic && traffic.limit > 0 ? (
         <section className="mx-panel mx-quota">
           <div className="mx-q" title={`流量 已用 ${fmtBytes(traffic.used)} / 总计 ${fmtBytes(traffic.limit, 0)}`}>
             <span className="k">流量</span>
@@ -176,6 +176,21 @@ export default function MatrixCard({ s, traffic, latency, brief }: CardProps) {
             <b className="info">{cycleP.toFixed(0)}%</b>
             <Blocks value={cycleP} n={24} tone="info" />
             <em>剩 <b className={left <= 3 ? 'warn' : ''}>{left}</b> 天 / {passed + left} 天</em>
+          </div>
+        </section>
+      ) : (
+        <section className="mx-panel mx-quota">
+          <div className="mx-q" title={`无限流量 · 开机累计已用 ${fmtBytes((st.net_in_transfer || 0) + (st.net_out_transfer || 0))}`}>
+            <span className="k">流量</span>
+            <b className="ok">无限</b>
+            <Blocks value={100} n={24} tone="ok" />
+            <em><b>{fmtBytes((st.net_in_transfer || 0) + (st.net_out_transfer || 0))}</b> / 无限</em>
+          </div>
+          <div className="mx-q" title="无周期流量限制">
+            <span className="k">周期</span>
+            <b className="info">不限</b>
+            <Blocks value={100} n={24} tone="info" />
+            <em>无限流量</em>
           </div>
         </section>
       )}
