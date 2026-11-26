@@ -94,3 +94,23 @@ func TestQualityLegacyEntry(t *testing.T) {
 		t.Fatalf("parts_at = %v", q["parts_at"])
 	}
 }
+
+func TestQualityInboundSummary(t *testing.T) {
+	resetQuality(t)
+	body := `{"parts":["route"],"routes_v4":[{"carrier":"电信","label":"CN2 GIA","premium":true}],
+	  "inbound_v4":[{"carrier":"电信","label":"CN2 GIA","premium":true,"method":"probe","city":"Dongguan"},
+	                {"carrier":"联通","label":"4837","guess":true,"method":"guess"}]}`
+	if err := SaveQuality(7, []byte(body)); err != nil {
+		t.Fatal(err)
+	}
+	b := QualitySummaries([]uint64{7})[7]
+	if in := b.Inbound["电信"]; in.Label != "CN2 GIA" || !in.Premium || in.Method != "probe" {
+		t.Fatalf("inbound 电信 = %+v", in)
+	}
+	if in := b.Inbound["联通"]; in.Label != "4837" || !in.Guess {
+		t.Fatalf("inbound 联通 = %+v", in)
+	}
+	if _, ok := GetQuality(7, true)["inbound_v4"]; !ok {
+		t.Fatal("inbound not exposed")
+	}
+}

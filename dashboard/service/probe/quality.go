@@ -31,7 +31,7 @@ var allParts = []string{partIP, partUnlock, partRoute}
 var partFields = map[string][]string{
 	partIP:     {"ipv4", "ipv6"},
 	partUnlock: {"unlock"},
-	partRoute:  {"routes_v4", "route_error"},
+	partRoute:  {"routes_v4", "inbound_v4", "route_error"},
 }
 
 type qualityEntry struct {
@@ -342,17 +342,21 @@ func GetQuality(serverID uint64, guest bool) map[string]any {
 type routeBrief struct {
 	Label   string `json:"label"`
 	Premium bool   `json:"premium,omitempty"`
+	Guess   bool   `json:"guess,omitempty"`  // 去程：没有探针结果，按默认骨干网推测
+	Method  string `json:"method,omitempty"` // 去程：probe / bgp / guess
 }
 
 type unlockBrief struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
 	Region string `json:"region,omitempty"`
+	Native *bool  `json:"native,omitempty"`
 }
 
 type QualityBrief struct {
-	Routes map[string]routeBrief `json:"routes,omitempty"` // 电信 / 联通 / 移动
-	Unlock []unlockBrief          `json:"unlock,omitempty"`
+	Routes  map[string]routeBrief `json:"routes,omitempty"`  // 回程：电信 / 联通 / 移动
+	Inbound map[string]routeBrief `json:"inbound,omitempty"` // 去程
+	Unlock  []unlockBrief         `json:"unlock,omitempty"`
 	IPType string                 `json:"ip_type,omitempty"`
 	Usage  string                 `json:"usage,omitempty"`
 }
@@ -405,6 +409,18 @@ func QualitySummaries(ids []uint64) map[uint64]QualityBrief {
 					}
 				}
 				b.Routes[carrier] = routeBrief{Label: best, Premium: bt.premium}
+			}
+		}
+		var inbound []struct {
+			Carrier string `json:"carrier"`
+			routeBrief
+		}
+		if json.Unmarshal(e.Sections["inbound_v4"], &inbound) == nil && len(inbound) > 0 {
+			b.Inbound = map[string]routeBrief{}
+			for _, in := range inbound {
+				if in.Carrier != "" && in.Label != "" {
+					b.Inbound[in.Carrier] = in.routeBrief
+				}
 			}
 		}
 		var unlock []unlockBrief
