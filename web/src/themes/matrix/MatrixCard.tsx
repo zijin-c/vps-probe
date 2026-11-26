@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import type { UnlockItem } from '../../lib/api'
 import { priceText } from '../../lib/billing'
-import { bytesParts, clsx, fmtAgo, fmtBytes, latencyTone, pct } from '../../lib/format'
+import { bytesParts, clsx, fmtAgo, fmtBytes, pct } from '../../lib/format'
 import type { LatencyLine } from '../../lib/hooks'
 import { coreCount, osLabel, CARRIERS } from '../../components/ServerCard'
 import { Flag, OsLogo } from '../../components/brand'
@@ -18,10 +18,26 @@ function fmtLongUptime(sec: number): string {
   return `${Math.max(1, m)}分`
 }
 
-const toneOfMs = (ms: number | null | undefined) => {
-  const t = latencyTone(ms)
-  return ms == null ? 'bad' : t === 'neutral' ? 'ok' : t
+/** 按服务器所在地区设定到国内的物理延迟基准（ms） */
+function regionBaseline(cc?: string): { base: number; label: string } {
+  const c = (cc || '').toUpperCase()
+  if (['CN', 'HK', 'MO', 'TW'].includes(c)) return { base: 35, label: '港澳台/大陆' }
+  if (['JP', 'KR', 'SG', 'MY', 'TH', 'VN', 'PH', 'ID', 'IN'].includes(c)) return { base: 80, label: '亚太' }
+  if (['US', 'CA', 'AU', 'NZ', 'RU'].includes(c)) return { base: 165, label: '北美/澳新' }
+  if (c) return { base: 220, label: '欧非/南美' }
+  return { base: 100, label: '默认' }
 }
+
+const toneOfMs = (ms: number | null | undefined, base = 100) => {
+  if (ms == null) return 'bad'
+  if (ms <= 0) return 'ok'
+  if (ms <= base * 1.25) return 'ok'
+  if (ms <= base * 1.75) return 'warn'
+  return 'bad'
+}
+
+const isPremiumRoute = (label?: string, prem?: boolean) =>
+  !!prem || !!(label && /CN2\s*GIA|9929|CMIN2|CTGNet/i.test(label))
 
 /** 方块进度条 */
 function Blocks({ value, n = 30, tone }: { value: number; n?: number; tone?: string }) {
@@ -35,8 +51,8 @@ function Blocks({ value, n = 30, tone }: { value: number; n?: number; tone?: str
   )
 }
 
-/** 最近 n 次采样的柱状图：高度 = 延迟，颜色 = 快慢，超时为满高红柱 */
-function Bars({ values, n = 28 }: { values: (number | null)[]; n?: number }) {
+/** 最近 n 次采样的柱状图：高度 = 延迟，颜色 = 相对地区基准的快慢，超时为满高红柱 */
+function Bars({ values, base = 100, n = 28 }: { values: (number | null)[]; base?: number; n?: number }) {
   const pts = values.slice(-n)
   const valid = pts.filter((x): x is number => x != null)
   const top = valid.length ? Math.max(...valid) * 1.15 : 1
@@ -44,21 +60,23 @@ function Bars({ values, n = 28 }: { values: (number | null)[]; n?: number }) {
     <div className="mx-bars" style={{ ['--n' as string]: n }} aria-hidden="true">
       {Array.from({ length: n - pts.length }, (_, i) => <i key={`p${i}`} />)}
       {pts.map((v, i) => (
-        <i key={i} className={v == null ? 'bad' : toneOfMs(v)} style={{ height: v == null ? '100%' : `${Math.max(18, (v / top) * 100)}%` }} />
+        <i key={i} className={v == null ? 'bad' : toneOfMs(v, base)} style={{ height: v == null ? '100%' : `${Math.max(18, (v / top) * 100)}%` }} />
       ))}
     </div>
   )
 }
 
-/** 线路质量评分：平均延迟、丢包、抖动综合，0~100 */
-function lineScore(l: LatencyLine) {
+/** 线路质量评分：按地区物理延迟基准 + 丢包 + 抖动综合，0~100 */
+function lineScore(l: LatencyLine, cc?: string) {
+  const reg = regionBaseline(cc)
   const v = l.delays.slice(-30).filter((x): x is number => x != null)
   let jitter = 0
   for (let i = 1; i < v.length; i++) jitter += Math.abs(v[i] - v[i - 1])
   jitter = v.length > 1 ? jitter / (v.length - 1) : 0
+  const latPenalty = Math.max(0, Math.min(55, (l.avg - reg.base) / 2.8))
   const score = Math.round(Math.max(0, Math.min(100,
-    100 - Math.max(0, Math.min(55, (l.avg - 40) / 3.5)) - Math.min(40, l.loss * 6) - Math.min(20, jitter / 1.5))))
-  return { score, jitter }
+    100 - latPenalty - Math.min(45, l.loss * 6) - Math.min(20, jitter / 1.5))))
+  return { score, jitter, reg }
 }
 const scoreText = (s: number) => (s >= 85 ? '优' : s >= 70 ? '良' : s >= 50 ? '中' : '差')
 const scoreTone = (s: number) => (s >= 70 ? 'ok' : s >= 50 ? 'warn' : 'bad')
@@ -201,27 +219,30 @@ export default function MatrixCard({ s, traffic, latency, brief }: CardProps) {
             const go = brief?.inbound?.[c]
             const back = brief?.routes?.[c]
             const l = lineFor(latency, c)
-            const q = l && l.delays.some((x) => x != null) ? lineScore(l) : null
+            const reg = regionBaseline(s.country_code)
+            const q = l && l.delays.some((x) => x != null) ? lineScore(l, s.country_code) : null
+            const goPrem = isPremiumRoute(go?.label, go?.premium)
+            const backPrem = isPremiumRoute(back?.label, back?.premium)
             return (
               <div key={c} className={clsx('mx-line', CARRIER_CLS[c])}>
                 <span className="mx-cn"><i />{c}</span>
                 <span className="mx-rt">
-                  <span className={clsx('r-go', go?.premium && 'prem', go?.guess && 'guess', !go && 'nil')} title={go ? `${c}去程：${go.label} · ${METHOD_TEXT[go.method || ''] || ''}` : '暂无去程数据'}>
+                  <span className={clsx('r-go', goPrem && 'prem', go?.guess && 'guess', !go && 'nil')} title={go ? `${c}去程：${go.label}${goPrem ? '（精品线路）' : ''} · ${METHOD_TEXT[go.method || ''] || ''}` : '暂无去程数据'}>
                     <i className="mx-arr"><svg viewBox="0 0 12 12"><path d="M3 6h6M6.5 3.5 9 6 6.5 8.5" /></svg></i>去 <b>{go?.label || '未识别'}</b>
                   </span>
-                  <span className={clsx('r-back', back?.premium && 'prem', !back && 'nil')} title={back ? `${c}回程：${back.label}` : '暂无回程数据'}>
+                  <span className={clsx('r-back', backPrem && 'prem', !back && 'nil')} title={back ? `${c}回程：${back.label}${backPrem ? '（精品线路）' : ''}` : '暂无回程数据'}>
                     <i className="mx-arr"><svg viewBox="0 0 12 12"><path d="M9 6H3M5.5 3.5 3 6l2.5 2.5" /></svg></i>回 <b>{back?.label || '未识别'}</b>
                   </span>
                 </span>
                 <span className="mx-lat">
                   <span className="mx-lm" title={q ? `最近 ${Math.min(28, l!.delays.length)} 次采样 · 抖动 ${q.jitter.toFixed(1)} ms` : '暂无延迟监控数据'}>
                     <span className="mx-lt">
-                      <b className={clsx('mx-ms', l ? toneOfMs(l.latest) : '')}>{l ? (l.latest != null ? l.latest.toFixed(l.latest < 10 ? 2 : 0) : '超时') : '—'}{l?.latest != null && <small>ms</small>}</b>
+                      <b className={clsx('mx-ms', l ? toneOfMs(l.latest, reg.base) : '')}>{l ? (l.latest != null ? l.latest.toFixed(l.latest < 10 ? 2 : 0) : '超时') : '—'}{l?.latest != null && <small>ms</small>}</b>
                       <span className={clsx('mx-loss', l && l.loss >= 1 && 'bad')}>丢包 <em>{l ? `${l.loss.toFixed(1)}%` : '—'}</em></span>
                     </span>
-                    <Bars values={l?.delays || []} />
+                    <Bars values={l?.delays || []} base={reg.base} />
                   </span>
-                  <span title={q ? `线路质量 ${q.score} 分 · ${scoreText(q.score)}（按平均延迟、丢包、抖动估算，非测速）` : '暂无延迟监控数据'}>
+                  <span title={q ? `线路质量 ${q.score} 分 · ${scoreText(q.score)}（${q.reg.label}基准 ${q.reg.base}ms，按延迟/丢包/抖动估算）` : '暂无延迟监控数据'}>
                     <Ring score={q ? q.score : null} />
                   </span>
                 </span>

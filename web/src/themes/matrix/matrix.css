@@ -239,17 +239,62 @@
 .mx-cn { display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 13px; font-weight: 800; white-space: nowrap; letter-spacing: .04em; }
 .mx-cn i { width: 3px; height: 14px; border-radius: 3px; background: var(--cc); box-shadow: 0 0 8px color-mix(in srgb, var(--cc) 60%, transparent); flex: none; }
 
-.mx-rt { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 7px; }
-.mx-rt > span { display: flex; align-items: center; gap: 4px; height: 15px; font-size: 11.5px; font-weight: 700; white-space: nowrap; min-width: 0; --d: #4b9bff; color: var(--d); }
-.mx-rt > span.r-back { --d: #f2a93b; }
-.mx-arr { flex: none; display: grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--d); box-shadow: 0 0 6px color-mix(in srgb, var(--d) 45%, transparent); }
-.mx-arr svg { width: 10px; height: 10px; fill: none; stroke: #0b1424; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.mx-rt b { font-size: 12px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
-.mx-rt .prem b::after { content: "★"; font-size: 8px; margin-left: 2px; vertical-align: 2px; color: var(--gold); }
-.mx-rt .guess b { opacity: .55; }
+.mx-rt { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 4px 6px; }
+/* 普通线路：沉稳柔和的冷灰蓝，清晰但不抢眼 */
+.mx-rt > span { display: flex; align-items: center; gap: 4px; height: 16px; padding: 0 3px; border-radius: 5px; font-size: 11px; font-weight: 650; white-space: nowrap; min-width: 0; --d: #64748b; color: var(--muted); }
+:root:not([data-theme="light"]) .mx-rt > span { --d: #64748b; color: #94a3b8; }
+.mx-rt > span.r-back { --d: #788496; }
+.mx-arr { flex: none; display: grid; place-items: center; width: 13px; height: 13px; border-radius: 50%; background: color-mix(in srgb, var(--d) 24%, transparent); }
+.mx-arr svg { width: 9px; height: 9px; fill: none; stroke: var(--d); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.mx-rt b { font-size: 11.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; color: var(--fg-2); }
+
+/* 精品线路（CN2 GIA / 9929 / CMIN2 / CTGNet）：高级星耀紫蓝 + 尊享鎏金渐变 */
+.mx-rt > span.r-go.prem {
+  --d: #7c3aed; color: #7c3aed;
+  background: linear-gradient(90deg, rgba(124, 58, 237, .12), rgba(59, 130, 246, .08));
+}
+.mx-rt > span.r-back.prem {
+  --d: #d97706; color: #b45309;
+  background: linear-gradient(90deg, rgba(245, 158, 11, .16), rgba(217, 119, 6, .06));
+}
+:root:not([data-theme="light"]) .mx-rt > span.r-go.prem {
+  --d: #c084fc; color: #c084fc;
+  background: linear-gradient(90deg, rgba(192, 132, 252, .16), rgba(96, 165, 250, .08));
+}
+:root:not([data-theme="light"]) .mx-rt > span.r-back.prem {
+  --d: #fbbf24; color: #fcd34d;
+  background: linear-gradient(90deg, rgba(251, 191, 36, .16), rgba(245, 158, 11, .06));
+}
+.mx-rt > span.prem .mx-arr {
+  background: linear-gradient(135deg, var(--d), color-mix(in srgb, var(--d) 70%, #ffffff));
+  box-shadow: 0 0 7px color-mix(in srgb, var(--d) 55%, transparent);
+}
+.mx-rt > span.prem .mx-arr svg { stroke: #0b1020; }
+.mx-rt > span.r-go.prem b {
+  font-weight: 800;
+  background: linear-gradient(90deg, #7c3aed, #2563eb);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.mx-rt > span.r-back.prem b {
+  font-weight: 800;
+  background: linear-gradient(90deg, #b45309, #e11d48);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+:root:not([data-theme="light"]) .mx-rt > span.r-go.prem b {
+  background: linear-gradient(90deg, #e879f9, #60a5fa);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+:root:not([data-theme="light"]) .mx-rt > span.r-back.prem b {
+  background: linear-gradient(90deg, #fde68a, #f59e0b);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.mx-rt .prem b::after { content: "★"; font-size: 8px; margin-left: 2px; vertical-align: 2px; color: var(--d); -webkit-text-fill-color: var(--d); }
+.mx-rt .guess b { opacity: .6; }
 .mx-rt .guess b::after { content: "?"; font-size: 9px; margin-left: 1px; vertical-align: 3px; }
 .mx-rt .nil { color: var(--faint); }
+.mx-rt .nil b { color: var(--faint); font-weight: 500; }
 .mx-rt .nil .mx-arr { background: var(--mx-block-off); box-shadow: none; }
+.mx-rt .nil .mx-arr svg { stroke: var(--faint); }
 
 .mx-lat { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 4px 7px 4px 9px; }
 .mx-lm { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
