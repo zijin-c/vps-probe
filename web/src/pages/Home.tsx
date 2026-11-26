@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import ServerCard, { RouteTags, expiryText } from '../components/ServerCard'
 import Topbar from '../components/Topbar'
 import { EmptyArt, Radar } from '../components/art'
-import { ICalendar, IDown, IGrid, IList, ISearch, ITraffic, IUp } from '../components/icons'
+import { ICalendar, IDown, IGrid, IList, IPulse, ISearch, IServer, ITraffic, IUp } from '../components/icons'
 import { Meter, Seg, Dropdown } from '../components/ui'
 import { api, type QualityBrief, type ServerGroup } from '../lib/api'
 import { useSkin } from '../lib/theme'
@@ -136,32 +136,87 @@ export default function Home() {
             <button className="btn sm" onClick={exitPreview}>退出预览</button>
           </div>
         )}
-        {themeDef.id === 'matrix' ? (
-          <section className="mx-summary">
-            <button type="button" className={clsx('mx-sum', (filter === 'online' || filter === 'offline') && 'on')}
-              title={offline ? '点击切换：在线 / 离线 / 全部' : '点击只看在线'}
-              onClick={() => setFilter(filter === 'all' ? (offline ? 'offline' : 'online') : filter === 'offline' ? 'online' : 'all')}>
-              <span className="k">在线节点</span>
-              <b><span className="ok">{online.length}</span><small>/ {servers.length}</small></b>
-              <span className="s">{offline ? <span className="bad">{offline} 台离线</span> : servers.length ? '全部在线' : '暂无服务器'}</span>
-            </button>
-            <div className="mx-sum">
-              <span className="k">实时上行</span>
-              <b className="ok">{bytesParts(up)[0]}<small>{bytesParts(up)[1]}/s</small></b>
-              <span className="s">下行 {fmtSpeed(down)}</span>
-            </div>
-            <div className="mx-sum">
-              <span className="k">累计流量</span>
-              <b>{bytesParts(totalIn + totalOut)[0]}<small>{bytesParts(totalIn + totalOut)[1]}</small></b>
-              <span className="s">出 {fmtBytes(totalOut)} · 入 {fmtBytes(totalIn)}</span>
-            </div>
-            <div className="mx-sum">
-              <span className="k">7 天内到期</span>
-              <b className={expiring.length ? 'warn' : ''}>{expiring.length}<small>台</small></b>
-              <span className="s" title={expiring.map((s) => s.name).join('、')}>{expiring.length ? expiring.map((s) => s.name).join('、') : '近期无需续费'}</span>
-            </div>
-          </section>
-        ) : (
+        {themeDef.id === 'matrix' ? (() => {
+          const onPct = servers.length ? Math.round((online.length / servers.length) * 100) : 0
+          const onLit = servers.length ? Math.round((online.length / servers.length) * 20) : 0
+          const totalNet = totalOut + totalIn
+          const outPct = totalNet > 0 ? Math.round((totalOut / totalNet) * 100) : 50
+          return (
+            <section className="mx-summary">
+              <button type="button" className={clsx('mx-sum s-ok', (filter === 'online' || filter === 'offline') && 'on')}
+                title={offline ? '点击切换：在线 / 离线 / 全部' : '点击只看在线'}
+                onClick={() => setFilter(filter === 'all' ? (offline ? 'offline' : 'online') : filter === 'offline' ? 'online' : 'all')}>
+                <div className="mx-sh">
+                  <span className="mx-sico ok"><IServer /></span>
+                  <span className="k">在线节点</span>
+                  <span className="spacer" />
+                  <span className={clsx('mx-sbadge', offline ? 'warn' : 'ok')}>{onPct}%</span>
+                </div>
+                <div className="mx-sv">
+                  <b><span className="ok">{online.length}</span><small>/ {servers.length}</small></b>
+                  <span className="s">{offline ? <span className="bad">{offline} 台离线</span> : servers.length ? '全部平稳运行' : '暂无服务器'}</span>
+                </div>
+                <div className="mx-blocks mx-sblk" style={{ ['--n' as string]: 20 }} aria-hidden="true">
+                  {Array.from({ length: 20 }, (_, i) => <i key={i} className={i < onLit ? (offline ? 'warn' : 'ok') : ''} />)}
+                </div>
+              </button>
+
+              <div className="mx-sum s-info">
+                <div className="mx-sh">
+                  <span className="mx-sico info"><IPulse /></span>
+                  <span className="k">实时吞吐</span>
+                  <span className="spacer" />
+                  <span className="mx-sbadge info">LIVE</span>
+                </div>
+                <div className="mx-sv">
+                  <b className="info">{bytesParts(up + down)[0]}<small>{bytesParts(up + down)[1]}/s</small></b>
+                  <span className="s">总带宽</span>
+                </div>
+                <div className="mx-spills">
+                  <span className="up"><i>↑</i><b>{fmtSpeed(up)}</b></span>
+                  <span className="down"><i>↓</i><b>{fmtSpeed(down)}</b></span>
+                </div>
+              </div>
+
+              <div className="mx-sum s-violet">
+                <div className="mx-sh">
+                  <span className="mx-sico violet"><ITraffic /></span>
+                  <span className="k">累计流量</span>
+                  <span className="spacer" />
+                  <span className="mx-sbadge violet">双向</span>
+                </div>
+                <div className="mx-sv">
+                  <b>{bytesParts(totalNet)[0]}<small>{bytesParts(totalNet)[1]}</small></b>
+                  <span className="s">出 {fmtBytes(totalOut)} · 入 {fmtBytes(totalIn)}</span>
+                </div>
+                <div className="mx-splitbar" aria-hidden="true">
+                  <i className="up" style={{ width: `${outPct}%` }} />
+                  <i className="down" style={{ width: `${100 - outPct}%` }} />
+                </div>
+              </div>
+
+              <div className={clsx('mx-sum', expiring.length ? 's-warn' : 's-teal')}>
+                <div className="mx-sh">
+                  <span className={clsx('mx-sico', expiring.length ? 'warn' : 'teal')}><ICalendar /></span>
+                  <span className="k">7 天内到期</span>
+                  <span className="spacer" />
+                  <span className={clsx('mx-sbadge', expiring.length ? 'warn' : 'ok')}>{expiring.length ? '需关注' : '良好'}</span>
+                </div>
+                <div className="mx-sv">
+                  <b className={expiring.length ? 'warn' : ''}>{expiring.length}<small>台</small></b>
+                  <span className="s" title={expiring.map((s) => s.name).join('、')}>
+                    {expiring.length ? expiring.map((s) => s.name).join('、') : '近期无需续费'}
+                  </span>
+                </div>
+                <div className="mx-sfoot">
+                  <span>{groups.length ? `${groups.length} 个分组` : '全部节点'}</span>
+                  <span>·</span>
+                  <span>{connected ? `${viewers} 人在线查看` : '连接中'}</span>
+                </div>
+              </div>
+            </section>
+          )
+        })() : (
         <section className="deck">
           <div className="deck-l">
             <div className="eyebrow deck-eyebrow"><span className="tick" />Fleet status<span className="sep">/</span>节点总览</div>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { LineChart, seriesColor, type Series } from '../components/Chart'
 import { CARRIERS, coreCount, expiryText, osLabel } from '../components/ServerCard'
+import { Flag, OsLogo } from '../components/brand'
 import Topbar from '../components/Topbar'
 import { IBack } from '../components/icons'
 import { AnimNum, Ring, Seg, Sparkline, useToast } from '../components/ui'
@@ -57,12 +58,14 @@ export default function ServerDetail() {
       <main className="page">
         <Link to="/" className="back"><IBack />全部服务器</Link>
 
-        <section className="hero glass">
+        <section className={clsx('hero glass', s.online ? 'is-on' : 'is-off')}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <h1>
               <span className={clsx('dot', s.online ? 'on pulse' : 'off')} />
+              {s.country_code && <Flag code={s.country_code} className="hero-flag" />}
               <span>{s.name}</span>
               {s.country_code && <span className="cc">{s.country_code.toUpperCase()}</span>}
+              {h.platform && <OsLogo os={osLabel(h.platform)} className="hero-os" />}
             </h1>
             <div className="meta">
               {[osLabel(h.platform) + (h.platform_version ? ` ${h.platform_version}` : ''), h.arch, h.virtualization, cores ? `${cores} 核` : ''].filter(Boolean).join(' · ')}
@@ -71,7 +74,7 @@ export default function ServerDetail() {
             </div>
           </div>
           <div className="hero-tags">
-            {priceText(b) && <span className="tag">{priceText(b)}</span>}
+            {priceText(b) && <span className="tag price-tag">{priceText(b)}</span>}
             {exp && <span className={clsx('tag', exp.tone !== 'neutral' && exp.tone)}>{exp.text}</span>}
             {b.remainingValue && <span className="tag plain">余值 {b.remainingValue}</span>}
             {extras.map((t) => <span key={t} className="tag plain">{t}</span>)}
@@ -79,14 +82,14 @@ export default function ServerDetail() {
         </section>
 
         <div className="kpis">
-          <RingKpi k="CPU" p={st.cpu || 0} s={`负载 ${(st.load_1 ?? 0).toFixed(2)} · ${(st.load_5 ?? 0).toFixed(2)} · ${(st.load_15 ?? 0).toFixed(2)}`} />
-          <RingKpi k="内存" p={memP} s={`${fmtBytes(st.mem_used)} / ${fmtBytes(h.mem_total)}`} />
-          <RingKpi k="硬盘" p={diskP} s={`${fmtBytes(st.disk_used)} / ${fmtBytes(h.disk_total)}`} />
+          <RingKpi cls="kpi-cpu" k="CPU" p={st.cpu || 0} s={`负载 ${(st.load_1 ?? 0).toFixed(2)} · ${(st.load_5 ?? 0).toFixed(2)} · ${(st.load_15 ?? 0).toFixed(2)}`} />
+          <RingKpi cls="kpi-mem" k="内存" p={memP} s={`${fmtBytes(st.mem_used)} / ${fmtBytes(h.mem_total)}`} />
+          <RingKpi cls="kpi-disk" k="硬盘" p={diskP} s={`${fmtBytes(st.disk_used)} / ${fmtBytes(h.disk_total)}`} />
           {traffic && traffic.limit > 0
-            ? <RingKpi k="周期流量" p={pct(traffic.used, traffic.limit)} s={`${fmtBytes(traffic.used)} / ${fmtBytes(traffic.limit, 0)} · ${fmtDate(traffic.to)} 重置`} />
-            : <RingKpi k="Swap" p={pct(st.swap_used, h.swap_total)} s={`${fmtBytes(st.swap_used)} / ${fmtBytes(h.swap_total)}`} />}
-          <SpeedKpi k="上行" v={st.net_out_speed || 0} s={`累计 ${fmtBytes(st.net_out_transfer)}`} tone="ok" />
-          <SpeedKpi k="下行" v={st.net_in_speed || 0} s={`累计 ${fmtBytes(st.net_in_transfer)}`} tone="info" />
+            ? <RingKpi cls="kpi-cycle" k="周期流量" p={pct(traffic.used, traffic.limit)} s={`${fmtBytes(traffic.used)} / ${fmtBytes(traffic.limit, 0)} · ${fmtDate(traffic.to)} 重置`} />
+            : <RingKpi cls="kpi-cycle" k="Swap" p={pct(st.swap_used, h.swap_total)} s={`${fmtBytes(st.swap_used)} / ${fmtBytes(h.swap_total)}`} />}
+          <SpeedKpi cls="kpi-up" k="上行" v={st.net_out_speed || 0} s={`累计 ${fmtBytes(st.net_out_transfer)}`} tone="ok" />
+          <SpeedKpi cls="kpi-down" k="下行" v={st.net_in_speed || 0} s={`累计 ${fmtBytes(st.net_in_transfer)}`} tone="info" />
         </div>
 
         <section className="sec">
@@ -140,9 +143,9 @@ export default function ServerDetail() {
   )
 }
 
-function RingKpi({ k, p, s }: { k: string; p: number; s: string }) {
+function RingKpi({ k, p, s, cls }: { k: string; p: number; s: string; cls?: string }) {
   return (
-    <div className="kpi glass">
+    <div className={clsx('kpi glass', cls)}>
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div className="label">{k}</div>
@@ -155,10 +158,10 @@ function RingKpi({ k, p, s }: { k: string; p: number; s: string }) {
   )
 }
 
-function SpeedKpi({ k, v, s, tone }: { k: string; v: number; s: string; tone: 'ok' | 'info' }) {
+function SpeedKpi({ k, v, s, tone, cls }: { k: string; v: number; s: string; tone: 'ok' | 'info'; cls?: string }) {
   const [, u] = bytesParts(v)
   return (
-    <div className="kpi glass">
+    <div className={clsx('kpi glass', cls)}>
       <div className="label">{k}</div>
       <div className="v" style={{ color: `var(--${tone})`, marginBottom: 0 }}>{bytesParts(v)[0]}<small style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 500, marginLeft: 3 }}>{u}/s</small></div>
       <div className="s" style={{ marginTop: 18 }}>{s}</div>
