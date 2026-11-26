@@ -2,6 +2,7 @@
 import ServerCard from '../components/ServerCard'
 import MatrixCard from './matrix/MatrixCard'
 import './matrix/matrix.css'
+import './matrix/matrix-pages.css'
 import { registerCard } from './registry'
 
 registerCard('observatory', ServerCard)
