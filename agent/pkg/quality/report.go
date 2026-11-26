@@ -59,14 +59,15 @@ type Route struct {
 }
 
 type Report struct {
-	Parts        []string `json:"parts"` // 本次实际执行的分项，面板据此合并
-	AgentVersion string   `json:"agent_version,omitempty"`
-	IPv4         *IPInfo  `json:"ipv4,omitempty"`
-	IPv6         *IPInfo  `json:"ipv6,omitempty"`
-	Unlock       []Unlock `json:"unlock,omitempty"`
-	RoutesV4     []Route  `json:"routes_v4,omitempty"`
-	Error        string   `json:"error,omitempty"`
-	TookSeconds  int      `json:"took_seconds,omitempty"`
+	Parts        []string  `json:"parts"` // 本次实际执行的分项，面板据此合并
+	AgentVersion string    `json:"agent_version,omitempty"`
+	IPv4         *IPInfo   `json:"ipv4,omitempty"`
+	IPv6         *IPInfo   `json:"ipv6,omitempty"`
+	Unlock       []Unlock  `json:"unlock,omitempty"`
+	RoutesV4     []Route   `json:"routes_v4,omitempty"`
+	InboundV4    []Inbound `json:"inbound_v4,omitempty"`
+	Error        string    `json:"error,omitempty"`
+	TookSeconds  int       `json:"took_seconds,omitempty"`
 }
 
 // Keys 是面板下发的可选数据源密钥（在面板 probe.yaml 中配置）。
@@ -117,7 +118,7 @@ func Run(parent context.Context, keys Keys, version string, parts []string) *Rep
 	}
 	if want[PartRoute] {
 		r.Parts = append(r.Parts, PartRoute)
-		wg.Add(1)
+		wg.Add(2)
 		go func() {
 			defer wg.Done()
 			routes, err := checkRoutes(ctx)
@@ -126,6 +127,8 @@ func Run(parent context.Context, keys Keys, version string, parts []string) *Rep
 			}
 			r.RoutesV4 = routes
 		}()
+		// 去程：BGP 推断，不需要 root
+		go func() { defer wg.Done(); r.InboundV4 = checkInbound(ctx) }()
 	}
 	wg.Wait()
 
