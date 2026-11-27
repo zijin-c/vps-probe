@@ -94,6 +94,9 @@
 .topo-link.on .tl-base, .topo-link.sel .tl-base { opacity: 1; }
 .topo-link.on .tl-glow, .topo-link.sel .tl-glow { opacity: .22; }
 .topo-link.dim { opacity: .1; }
+.topo-drop rect { fill: var(--c); fill-opacity: .07; stroke: var(--c); stroke-opacity: .45; stroke-dasharray: 5 6; pointer-events: none; }
+.topo-drop text { font: 600 12px var(--sans); fill: var(--c); pointer-events: none; }
+.topo-drop-ghost { fill: var(--c); fill-opacity: .15; stroke: var(--c); stroke-width: 1.5; stroke-dasharray: 4 4; pointer-events: none; }
 .topo-rubber { stroke: var(--signal); stroke-width: 1.5; stroke-dasharray: 4 5; pointer-events: none; }
 
 /* ---------- 节点（圆形站点） ---------- */
@@ -218,3 +221,37 @@
   .topo-card { position: static; width: auto; margin: 0 12px 12px; animation: none; }
   .topo-legend { position: static; padding: 10px 14px 12px; }
 }
+
+/* ---------- 后台：服务器面板（拖入画布） ---------- */
+.topo-palette { padding: 12px 14px 12px; margin-bottom: 14px; }
+.tp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.tp-title { font-weight: 600; font-size: 13px; }
+.tp-hint { font-size: 11.5px; color: var(--faint); }
+.tp-search { position: relative; width: 180px; }
+.tp-search svg { position: absolute; left: 10px; top: 50%; width: 14px; height: 14px; transform: translateY(-50%); color: var(--faint); pointer-events: none; }
+.tp-search .input { height: 30px; padding-left: 30px; font-size: 12.5px; }
+.tp-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 92px; overflow-y: auto; scrollbar-width: thin; }
+.tp-chip { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 11px 0 10px; border-radius: 999px; border: 1px solid var(--hairline-2); background: var(--glass-2); color: var(--fg); font: inherit; font-size: 12.5px; font-weight: 550; cursor: grab; white-space: nowrap; transition: border-color .15s, transform .15s var(--ease), box-shadow .15s; }
+.tp-chip:hover { border-color: var(--signal); transform: translateY(-1px); box-shadow: 0 6px 16px -10px var(--signal); }
+.tp-chip:active { cursor: grabbing; }
+.tp-chip .flag { width: 16px; height: 12px; border-radius: 2px; background-size: cover; flex: none; }
+.tp-chip .flag-none { display: none; }
+.tp-route { font: 600 10px var(--mono); color: var(--info); padding: 2px 6px; border-radius: 5px; background: var(--info-wash); }
+.tp-route.premium { color: var(--gold); background: var(--gold-wash); }
+.tp-hidden { width: 13px; height: 13px; color: var(--warn); }
+.tp-chip.placed { cursor: pointer; opacity: .5; border-style: dashed; }
+.tp-chip.placed:hover { opacity: .85; transform: none; box-shadow: none; }
+.tp-check { color: var(--ok); font-weight: 700; }
+.tp-warn { margin-top: 10px; font-size: 11.5px; color: var(--warn); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+.topo-add { position: relative; display: inline-flex; }
+.topo-add-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; width: 230px; padding: 6px; border-radius: var(--r-md); background: var(--glass); display: flex; flex-direction: column; animation: rise .18s var(--ease); }
+.topo-add-menu button { display: grid; grid-template-columns: 10px 1fr; column-gap: 9px; align-items: center; text-align: left; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--fg); font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; }
+.topo-add-menu button:hover { background: var(--glass-hover); }
+.topo-add-menu i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--c); grid-row: span 2; }
+.topo-add-menu small { grid-column: 2; font-size: 11px; color: var(--faint); font-weight: 400; }
+
+.topo-detect { font-size: 12px; line-height: 1.6; padding: 10px 12px; border-radius: var(--r-md); background: var(--well); border-left: 2px solid var(--hairline-2); display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.topo-detect.has { border-left-color: var(--info); }
+.topo-detect .btn { margin-top: 4px; }
+.topo-stage .topo-empty-cta { top: 52px; font-size: 14px; line-height: 1.8; }

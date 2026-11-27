@@ -21,6 +21,8 @@ export interface TopoLink {
   label?: string
   kind: TopoKind
   note?: string
+  /** 类型与标注由探针检测结果自动识别（手动修改后变为 false） */
+  auto?: boolean
 }
 
 export interface Topology {
@@ -66,22 +68,73 @@ const MARGIN_X = 90
 export const clampX = (x: number) => Math.min(CANVAS_W - MARGIN_X, Math.max(MARGIN_X, x))
 export const clampY = (y: number) => Math.min(CANVAS_H - NODE_R - LABEL_H - 10, Math.max(NODE_R + 60, y))
 
+/** 五个角色固定的列位置（编辑器的列参考线、拖入时按位置判断角色、自动排列都用它） */
+const COL_PAD = 130
+export const COL_X: Record<TopoRole, number> = Object.fromEntries(
+  ROLE_ORDER.map((r, i) => [r, Math.round(COL_PAD + (i * (CANVAS_W - COL_PAD * 2)) / (ROLE_ORDER.length - 1))]),
+) as Record<TopoRole, number>
+
+/** 按横坐标判断属于哪一列（拖入服务器时自动决定角色） */
+export function roleForX(x: number): TopoRole {
+  let best: TopoRole = 'exit'
+  for (const r of ROLE_ORDER) if (Math.abs(COL_X[r] - x) < Math.abs(COL_X[best] - x)) best = r
+  return best
+}
+
 /** 按角色分列自动排布：列从左到右为 用户端 → 入口 → 中转 → 出口 → 目标，列内保持原有上下顺序 */
 export function autoLayout(t: Topology): Topology {
-  const cols = ROLE_ORDER.map((r) => t.nodes.filter((n) => n.role === r).sort((a, b) => a.y - b.y)).filter((c) => c.length)
-  if (!cols.length) return t
-  const padX = 130
-  const stepX = cols.length > 1 ? (CANVAS_W - padX * 2) / (cols.length - 1) : 0
   const pos = new Map<string, { x: number; y: number }>()
-  cols.forEach((col, ci) => {
-    const x = cols.length > 1 ? padX + stepX * ci : CANVAS_W / 2
+  for (const r of ROLE_ORDER) {
+    const col = t.nodes.filter((n) => n.role === r).sort((a, b) => a.y - b.y)
     const top = 120
     const span = CANVAS_H - top - 90
     const step = col.length > 1 ? Math.min(150, span / (col.length - 1)) : 0
     const start = top + (span - step * (col.length - 1)) / 2
-    col.forEach((n, i) => pos.set(n.id, { x: Math.round(x), y: Math.round(start + step * i) }))
-  })
+    col.forEach((n, i) => pos.set(n.id, { x: COL_X[r], y: Math.round(start + step * i) }))
+  }
   return { ...t, nodes: t.nodes.map((n) => ({ ...n, ...pos.get(n.id)! })) }
+}
+
+/** 探针对某台服务器的线路检测摘要（与 QualityBrief 的 routes / inbound 结构一致） */
+export interface RouteBrief {
+  routes?: Record<string, { label: string; premium?: boolean }>
+  inbound?: Record<string, { label: string; premium?: boolean; guess?: boolean }>
+}
+
+export interface DetectedRoute { kind: TopoKind; label?: string; source: string }
+
+/**
+ * 根据探针检测结果识别一条线路的类型与标注。
+ * 看下游节点（流量进入它的那台服务器）的检测结果；下游不是服务器（例如「互联网」）时看上游，即出口自身的线路。
+ *   去程实测 / BGP 推断 > 回程检测 > 服务器备注里手填的线路；有精品网（CN2 GIA / 9929 / CMIN2 …）即判为精品专线。
+ */
+export function detectRoute(
+  from: TopoNode, to: TopoNode,
+  briefs: Record<string, RouteBrief | undefined>,
+  manualRoute: (serverId: number) => string | undefined,
+  nameOf: (n: TopoNode) => string,
+): DetectedRoute | null {
+  const n = to.server_id ? to : from.server_id ? from : null
+  if (n?.server_id) {
+    const b = briefs[String(n.server_id)]
+    const sets: { items: { label: string; premium?: boolean; guess?: boolean }[]; what: string }[] = [
+      { items: Object.values(b?.inbound || {}).filter((x) => !x.guess), what: '去程检测' },
+      { items: Object.values(b?.routes || {}), what: '回程检测' },
+    ]
+    for (const { items, what } of sets) {
+      const labels = items.filter((x) => x.label)
+      if (!labels.length) continue
+      const premium = [...new Set(labels.filter((x) => x.premium).map((x) => x.label))]
+      const pick = premium.length ? premium : [...new Set(labels.map((x) => x.label))]
+      return { kind: premium.length ? 'premium' : 'normal', label: pick.slice(0, 2).join(' / '), source: `${nameOf(n)} 的${what}` }
+    }
+    const manual = manualRoute(n.server_id)?.trim()
+    if (manual) {
+      const premium = /cn2|gia|9929|cmin2|iplc|iepl|精品|cugt|ctgnet/i.test(manual)
+      return { kind: premium ? 'premium' : 'normal', label: manual.slice(0, 30), source: `${nameOf(n)} 备注的线路` }
+    }
+  }
+  return null
 }
 
 /** 圆形节点上的连接点 + 出线方向；尽量从左右两侧出线，避开下方的文字 */

@@ -38,6 +38,7 @@ type TopoLink struct {
 	Label string `json:"label,omitempty"` // 如 IPLC / CN2 GIA / WireGuard
 	Kind  string `json:"kind"`            // premium / normal / tunnel / backup
 	Note  string `json:"note,omitempty"`
+	Auto  bool   `json:"auto,omitempty"` // 类型与标注由探针检测结果自动识别
 }
 
 // Topology 是整张拓扑图。

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEven
 import { clsx, fmtSpeed } from '../lib/format'
 import type { LiveServer } from '../lib/hooks'
 import {
-  CANVAS_H, CANVAS_W, KINDS, LABEL_H, NODE_R, ROLES, ROLE_ORDER, clampX, clampY, connected, fitText, linkBends, linkPath,
+  CANVAS_H, CANVAS_W, COL_X, KINDS, LABEL_H, NODE_R, ROLES, ROLE_ORDER, clampX, clampY, roleForX, connected, fitText, linkBends, linkPath,
   type TopoNode, type TopoRole, type Topology,
 } from '../lib/topology'
 import { useFlagUrls } from './brand'
@@ -24,7 +24,12 @@ interface Props {
   fit?: boolean
   /** 外部指定要高亮的节点与线路（优先于悬停 / 选中） */
   highlight?: { nodes: Set<string>; links: Set<string> } | null
+  /** 从外部（服务器列表）拖入服务器：返回服务器 ID 与画布坐标 */
+  onDropServer?: (serverId: number, x: number, y: number) => void
 }
+
+/** 拖拽服务器时 dataTransfer 使用的类型 */
+export const DRAG_SERVER_TYPE = 'application/x-probe-server'
 
 /** 角色图标（24 网格线性图标） */
 const GLYPH: Record<TopoRole, string> = {
@@ -57,12 +62,13 @@ function seed(id: string): number {
 type NodeState = 'online' | 'offline' | 'none'
 
 export default function TopologyCanvas({
-  topo, live, editable, selected, onSelect, onMove, onMoveEnd, connectFrom, onConnect, fit, highlight,
+  topo, live, editable, selected, onSelect, onMove, onMoveEnd, connectFrom, onConnect, fit, highlight, onDropServer,
 }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
   const drag = useRef<{ id: string; dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null)
   const [hover, setHover] = useState<TopoSelection | null>(null)
   const [pointer, setPointer] = useState<{ x: number; y: number } | null>(null)
+  const [dropPt, setDropPt] = useState<{ x: number; y: number } | null>(null)
   const reduced = useReducedMotion()
   const flags = useFlagUrls(topo.nodes.map((n) => n.region || ''))
 
@@ -82,11 +88,11 @@ export default function TopologyCanvas({
   const hl = highlight || auto
 
   // 分列标题：同一角色的节点大致在一列时，在列顶写上角色名
-  const columns = useMemo(() => ROLE_ORDER.map((r) => {
+  const columns = useMemo(() => editable ? ROLE_ORDER.map((r) => ({ role: r, x: COL_X[r] })) : ROLE_ORDER.map((r) => {
     const xs = topo.nodes.filter((n) => n.role === r).map((n) => n.x)
     if (!xs.length || Math.max(...xs) - Math.min(...xs) > 140) return null
     return { role: r, x: (Math.max(...xs) + Math.min(...xs)) / 2 }
-  }).filter(Boolean) as { role: TopoRole; x: number }[], [topo.nodes])
+  }).filter(Boolean) as { role: TopoRole; x: number }[], [topo.nodes, editable])
 
   // 视野：编辑器用完整画布，前台裁剪到内容区域
   const vb = useMemo(() => {
@@ -148,6 +154,21 @@ export default function TopologyCanvas({
       aria-label="网络出口拓扑图"
       onPointerMove={(e) => connectFrom && setPointer(toSvg(e))}
       onClick={() => onSelect?.({})}
+      onDragOver={(e) => {
+        if (!onDropServer || !e.dataTransfer.types.includes(DRAG_SERVER_TYPE)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setDropPt(toSvg(e))
+      }}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropPt(null) }}
+      onDrop={(e) => {
+        const id = Number(e.dataTransfer.getData(DRAG_SERVER_TYPE))
+        setDropPt(null)
+        if (!onDropServer || !id) return
+        e.preventDefault()
+        const p = toSvg(e)
+        onDropServer(id, clampX(Math.round(p.x / 5) * 5), clampY(Math.round(p.y / 5) * 5))
+      }}
     >
       <defs>
         <pattern id="topo-dots" width="22" height="22" patternUnits="userSpaceOnUse">
@@ -205,6 +226,17 @@ export default function TopologyCanvas({
           <text x={c.x} y={vb.y + 47} textAnchor="middle" className="topo-col-zh">{ROLES[c.role].name}</text>
         </g>
       ))}
+
+      {dropPt && (() => {
+        const r = roleForX(dropPt.x)
+        return (
+          <g className="topo-drop" style={{ ['--c' as string]: ROLES[r].color }}>
+            <rect x={COL_X[r] - 80} y={vb.y + 8} width={160} height={vb.h - 16} rx={22} />
+            <text x={COL_X[r]} y={vb.y + vb.h - 22} textAnchor="middle">放下作为「{ROLES[r].name}」</text>
+            <circle cx={clampX(dropPt.x)} cy={clampY(dropPt.y)} r={NODE_R} className="topo-drop-ghost" />
+          </g>
+        )
+      })()}
 
       {/* 线路 */}
       {topo.links.map((l) => {
