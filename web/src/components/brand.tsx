@@ -5,6 +5,30 @@ import { useEffect, useState } from 'react'
 const flagLoaders = import.meta.glob('../../node_modules/flag-icons/flags/4x3/*.svg', { query: '?url', import: 'default' }) as Record<string, () => Promise<string>>
 const flagCache = new Map<string, string>()
 
+/** CSS background-image 用的 url()：小图会被内联成含引号的 data: 地址，必须加引号 */
+export const cssUrl = (u: string) => `url("${u.replace(/"/g, '%22')}")`
+
+/** 在 SVG 里用 <image> 画国旗时使用：返回国旗图片地址（按需加载） */
+export function useFlagUrls(codes: string[]): Record<string, string> {
+  const key = [...new Set(codes.map((c) => c.toLowerCase()).filter(Boolean))].sort().join(',')
+  const [urls, setUrls] = useState<Record<string, string>>(() => Object.fromEntries([...flagCache.entries()]))
+  useEffect(() => {
+    let alive = true
+    for (const cc of key ? key.split(',') : []) {
+      if (flagCache.has(cc)) continue
+      const load = flagLoaders[`../../node_modules/flag-icons/flags/4x3/${cc}.svg`]
+      if (!load) continue
+      load().then((u) => {
+        flagCache.set(cc, u)
+        if (alive) setUrls(Object.fromEntries([...flagCache.entries()]))
+      }).catch(() => {})
+    }
+    setUrls(Object.fromEntries([...flagCache.entries()]))
+    return () => { alive = false }
+  }, [key])
+  return urls
+}
+
 export function Flag({ code, className = 'flag' }: { code?: string; className?: string }) {
   const cc = (code || '').toLowerCase()
   const key = `../../node_modules/flag-icons/flags/4x3/${cc}.svg`
@@ -25,7 +49,7 @@ export function Flag({ code, className = 'flag' }: { code?: string; className?: 
       </span>
     )
   }
-  return <span className={className} title={cc.toUpperCase()} style={src ? { backgroundImage: `url(${src})` } : undefined} aria-label={cc.toUpperCase()} />
+  return <span className={className} title={cc.toUpperCase()} style={src ? { backgroundImage: cssUrl(src) } : undefined} aria-label={cc.toUpperCase()} />
 }
 
 // 系统图标：简化后的品牌标识，只用于识别，不追求还原

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useNow } from '../lib/hooks'
 import { useTheme } from '../lib/theme'
 import { Mark } from './art'
-import { IMoon, ISun, IUser } from './icons'
+import { IMoon, ISun, ITopology, IUser } from './icons'
 
 export { Mark }
 
@@ -38,6 +38,7 @@ export default function Topbar({ title, right }: { title: string; right?: ReactN
         <Clock />
         <span className="hdr-sep" />
         <ThemeButton />
+        <Link className="iconbtn" to="/topology" title="网络拓扑" aria-label="网络拓扑"><ITopology /></Link>
         <a className="iconbtn" href="/dashboard/" title="后台" aria-label="后台"><IUser /></a>
       </div>
     </header>

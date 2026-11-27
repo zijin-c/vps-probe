@@ -15,6 +15,7 @@ import './themes'
 
 // 后台单独分包，访客只加载前台代码
 const Admin = lazy(() => import('./admin/Admin'))
+const Topology = lazy(() => import('./pages/Topology'))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -26,6 +27,7 @@ createRoot(document.getElementById('root')!).render(
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/server/:id" element={<ServerDetail />} />
+            <Route path="/topology" element={<Topology />} />
             <Route path="/dashboard/*" element={<Admin />} />
             <Route path="*" element={<Home />} />
           </Routes>

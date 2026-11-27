@@ -121,7 +121,8 @@ func routers(r *gin.Engine, frontendDist fs.FS) {
 	// PAT bearer requests bypass — so the only callers gated are
 	// cookie-JWT POST/PATCH/PUT/DELETE, which is exactly the H6 surface.
 	auth := api.Group("", authMw, csrfMiddleware())
-	registerProbeRoutes(r, authMw, optionalAuthMw) // 只读分支：备份/恢复、IP 与线路质量
+	registerProbeRoutes(r, authMw, optionalAuthMw)    // 只读分支：备份/恢复、IP 与线路质量
+	registerTopologyRoutes(r, authMw, optionalAuthMw) // 网络拓扑（公开）与账号记录（仅管理员）
 
 	// 「自我管理」类端点 — 显式禁止 PAT 访问（避免 PAT 自我提权链）。
 	patForbidden := restPATForbiddenMiddleware()
@@ -465,6 +466,7 @@ func fallbackToFrontend(frontendDist fs.FS) func(*gin.Context) {
 		// official user frontend
 		regexp.MustCompile(`^/$`),
 		regexp.MustCompile(`^/server/\d*$`),
+		regexp.MustCompile(`^/topology$`),
 		// backend frontend
 		regexp.MustCompile(`^/dashboard/$`),
 		regexp.MustCompile(`^/dashboard/login$`),
@@ -491,7 +493,7 @@ func fallbackToFrontend(frontendDist fs.FS) func(*gin.Context) {
 		// 新增前端路由时必须在 admin-frontend/src/main.tsx 与这里同步加。
 		regexp.MustCompile(`^/dashboard/transfer$`),
 		// 只读分支自研后台（web/src/admin）的路由
-		regexp.MustCompile(`^/dashboard/(overview|servers|groups|monitors|alerts|notifications|backup|account|probe|themes)$`),
+		regexp.MustCompile(`^/dashboard/(overview|servers|groups|monitors|alerts|notifications|backup|account|probe|themes|topology|accounts)$`),
 	}
 
 	getFallbackStatusCode := func(path string) int {

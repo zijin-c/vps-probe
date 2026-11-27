@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Mark, ThemeButton } from '../components/Topbar'
 import {
-  IArchive, IBell, IEye, IGrid, IHome, ILayers, ILogout, IMenu, IPulse, ISend, IServer, ISettings, ISliders, IUser, IX,
+  IArchive, IBell, IEye, IGrid, IHome, IKey, ILayers, ILogout, IMenu, IPulse, ISend, IServer, ISettings, ISliders, ITopology, IUser, IX,
 } from '../components/icons'
 import { api, getSetting, type Profile, type Setting } from '../lib/api'
 import { useTitle } from '../lib/hooks'
@@ -19,6 +19,8 @@ import Themes from './Themes'
 import Settings from './Settings'
 import Backup from './Backup'
 import Account from './Account'
+import TopologyAdmin from './Topology'
+import Accounts from './Accounts'
 
 const NAV: { group: string; items: { to: string; label: string; icon: typeof IServer }[] }[] = [
   { group: '总览', items: [
@@ -28,6 +30,10 @@ const NAV: { group: string; items: { to: string; label: string; icon: typeof ISe
     { to: 'servers', label: '服务器', icon: IServer },
     { to: 'groups', label: '分组', icon: ILayers },
     { to: 'monitors', label: '延迟监控', icon: IPulse },
+  ] },
+  { group: '网络', items: [
+    { to: 'topology', label: '拓扑图', icon: ITopology },
+    { to: 'accounts', label: '账号记录', icon: IKey },
   ] },
   { group: '告警', items: [
     { to: 'alerts', label: '告警规则', icon: IBell },
@@ -124,6 +130,8 @@ export default function Admin() {
                 <Route path="servers" element={<Servers />} />
                 <Route path="groups" element={<Groups />} />
                 <Route path="monitors" element={<Monitors />} />
+                <Route path="topology" element={<TopologyAdmin />} />
+                <Route path="accounts" element={<Accounts />} />
                 <Route path="alerts" element={<Alerts />} />
                 <Route path="notifications" element={<Notifications />} />
                 <Route path="themes" element={<Themes />} />

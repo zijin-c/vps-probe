@@ -25,6 +25,7 @@ import (
 //   sqlite.db       数据库快照（服务器/密钥/分组/告警/通知/服务监控/流量记录/用户）
 //   probe.yaml      本分支扩展配置
 //   probe-state.json 提醒去重状态
+//   probe-topology.json / probe-accounts.json 网络拓扑与节点账号记录
 //   tsdb/...        可选：监控历史
 
 const (
@@ -91,7 +92,7 @@ func WriteBackup(w io.Writer, includeHistory bool) error {
 	if err := tarFile(tw, "config.yaml", paths.Config); err != nil {
 		return err
 	}
-	for _, name := range []string{"probe.yaml", "probe-state.json", "probe-quality.json"} {
+	for _, name := range []string{"probe.yaml", "probe-state.json", "probe-quality.json", "probe-topology.json", "probe-accounts.json"} {
 		p := filepath.Join(dataDir, name)
 		if _, err := os.Stat(p); err == nil {
 			if err := tarFile(tw, name, p); err != nil {
@@ -315,6 +316,8 @@ func ApplyRestore(archive string, p Paths, dir string) error {
 		{filepath.Join(stage, "probe.yaml"), filepath.Join(dir, "probe.yaml")},
 		{filepath.Join(stage, "probe-state.json"), filepath.Join(dir, "probe-state.json")},
 		{filepath.Join(stage, "probe-quality.json"), filepath.Join(dir, "probe-quality.json")},
+		{filepath.Join(stage, "probe-topology.json"), filepath.Join(dir, "probe-topology.json")},
+		{filepath.Join(stage, "probe-accounts.json"), filepath.Join(dir, "probe-accounts.json")},
 	}
 	if m.History && m.TSDBPath != "" {
 		moves = append(moves, struct{ from, to string }{filepath.Join(stage, "tsdb"), m.TSDBPath})
